@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>DDS Control Panel</title>
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- <script src="controll-page.ts"></script> -->
+
+</head>
+
+<body>
+  <h2>DDS SIGNAL GENERATOR</h2>
+
+  <div>
+    <form action="../backend" id="controlForm" method="post">
+      <div>
+      <p>
+        <label for="freq">Frequency:
+        <input type="number" id="freq" name="frequency" 
+          required /> Hz<br />
+        </label>
+        <label for="amp">Amplitude:
+        <input type="number" id="amp" name="amplitude" 
+          value="15000" min="0" required/> mV<br />
+        </label>
+      </p>
+      </div>
+
+      <div class="button">
+        <input type="submit" id="configure" name="Submit"/>
+      <!-- <botton type="submit">submit</botton> -->
+      </div>  
+    </form>
+
+    <form id="resetForm" method="post" action="../backend">
+        <div>
+      <p>
+        <input type="submit" value="Reset DDS" center />
+        <!-- <botton type="submit">Reset DDS</botton> -->
+      </p>
+        </div>
+    </form>
+  </div>
+
+  <div>
+    <h2>DDS Monitor</h2>
+    <form id="monitorForm" method="get">
+      <p>Frequency: <input type="text" name="monitor_freq" readonly></p>
+      <p>Voltage: <input type="text" name="monitor_volt" readonly></p>
+    </form>
+  </div>
+</body>
+
+</html>

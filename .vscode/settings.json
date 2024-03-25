@@ -1,0 +1,9 @@
+{
+  "Lua.diagnostics.disable": [
+    "lowercase-global",
+    "undefined-global"
+  ],
+  "rust-analyzer.linkedProjects": [
+    ".\\frontend\\Cargo.toml"
+  ]
+}

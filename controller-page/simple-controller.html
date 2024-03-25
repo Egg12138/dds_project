@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>DDS Control Panel</title>
+  <style>
+    /* Basic styles */
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background-color: #f0f0f0;  /* Light background */
+    }
+
+    form {
+      margin: 10px;
+      padding: 20px;
+      border-radius: 10px;  /* Rounded corners */
+      background-color: #fff;  /* White background for forms */
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);  /* Subtle shadow */
+    }
+
+    h2 {
+      text-align: center;
+      margin-bottom: 20px;
+      color: #333;  /* Darker heading color */
+    }
+
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;  /* Bold labels */
+    }
+
+    input[type="text"], input[type="number"] {
+      width: 100%;
+      padding: 5px;
+      border: 1px solid #ccc;
+      border-radius: 3px;  /* Rounded corners for inputs */
+    }
+
+    input[type="submit"] {
+      background-color: #4CAF50;  /* Green button color */
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;  /* Rounded corners for button */
+      cursor: pointer;  /* Change cursor on hover */
+    }
+  </style>
+</head>
+<body>
+  <h2>DDS SIGNAL GENERATOR</h2>
+
+  <form action="/action_page">
+    <p>
+      <label for="freq">Frequency:</label>
+      <input type="number" id="freq" name="freq" value="1000" min="1" /> Hz<br />
+      <label for="amp">Amplitude:</label>
+      <input type="number" id="amp" name="amp" value="1000" min="0" /> mV<br />
+    </p>
+    <input type="submit" value="Submit" />
+  </form>
+  <form action="/reset">
+    <p><input type="submit" value="Reset DDS" />
+      
+    </p>
+  </form>
+
+  <h2>DDS Monitor</h2>
+  <form>
+    <p>Frequency: <input type="text" name="monitor_freq" readonly></p>
+    <p>Voltage: <input type="text" name="monitor_volt" readonly></p>
+  </form>
+</body>
+</html>

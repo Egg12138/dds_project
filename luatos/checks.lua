@@ -1,7 +1,15 @@
 sys = require("sys")
+rtchelper = require("rtchelper")
+wifihelper = require("wifi-utils")
+httphelper = require("http-utils")
 local checker = {}
+
+function checker.rtc_checks()
+  rtchelper.display_time()
+  rtchelper.set_time(2014,11,14)
+end
 function checker.mem_check()
-  log("lua o")
+  log("luatos")
   sys.wait(1000)
   log.info("luatos", "hi", count, os.date())
   local tot, used, history_max_used = rtos.meminfo()
@@ -27,9 +35,11 @@ end
 
 
 
-function checker.wifi_check()
+function checker.wifi_checks()
   -- LEARN wifi configuration check
   -- LEARN wifi status check 
+  wifihelper.setup(wlan.STATION, true)
+  wifihelper.wifi_test()
 
 end
 
@@ -39,5 +49,26 @@ function checker.bt_check()
   -- LEARN bluetooth status check 
 end
 
+function checker.http_checks()
+  HTTPBIN = "http://httpbin.io/"
+  local ret_code = httphelper.get(HTTPBIN.."ip") 
+  if ret_code == 0 then
+    log.info("===CHECK::HTTP", "request works")
+  else 
+    log.info("===CHECK::HTTP", "error:" .. ret_code)
+  end
+  httphelper.get(HTTPBIN.."get?foo=bar")
+  httphelper.get(HTTPBIN.."user-agent")
+  httphelper.get(HTTPBIN.."dump/request?foo=bar")
+  httphelper.get(HTTPBIN.."status/418")
+  httphelper.get(HTTPBIN.."status/418")
+
+function checker.mqtt_tests()
+  
+end
+
+
+
+end
 
 return checker
