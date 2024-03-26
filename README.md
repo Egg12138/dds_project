@@ -12,38 +12,47 @@ TODO: 5. html controller
 
 有可能改成 python 实现，最后整个项目可能就会是:
 
+
+
+#### layout 
+
 * xmake build
 * python/Rust backend
 * mobild remote backend (GUI)
-* esp32 --> DDS
-* esp32 -(WIFI/BLE/CONNECTION)-> Ends
+* esp32 <--> DDS
+* esp32 <--> IoT cloud (WIFI/BLE/CONNECTION)<--> Ends
 * edp32 --> Screen (固定占用几个引脚)
 
 build:
 
 TODO: build as a binary
 
-options: (cargo-like style)
+#### command line (git/cargo style)
 
-* `verbose`
-* `version`
-* `init <METHOD>`
-* `connect`
-* `run <Indications>` (默认直接启动，否则执行 Indications 脚本)
-* `poweroff` (shutdown the system)
-* `pause`    (pause the DDS output)
-* `monitor` (参考idf.py) 
+options/actions: (git/cargo-like style)
+
+* `verbose` - Option, ON/OFF
+* `version` - Option, display/notdisplay
+* `init <METHOD>` - Option, ON/OFF
+* `connect` - Option, ON/OFF
+* `run <Indications>` - Option, default value, (默认直接启动，否则执行 Indications 脚本)
+* `poweroff=<Target>,<wait>` - Option, default value (shutdown the system)
+  * `poweroff=mcu,3s`
+  * `poweroff=dds,10s`
+  * `poweroff=mcu`  (default value: immediately)
+<!-- * `pause` -   (pause the DDS output) -->
+* `monitor -p <PORT> -b <BAUD_RATE>` (参考idf.py) 
   > draw panel
   > 输入freq, 输入amp, 实际输出freq, 实际输出amp,..., ADC, DAC info, wifi, bluetooth info
   > 实时反馈
-* `interactive` (交互模式)
+* `repl` - Option ON/OFF and **do nothing on other options**
   * 
-* `menuconfig` (HARD)
+* ~~`menuconfig` (HARD to implement)~~
 
 
 步骤:
 
-1. backend 初始化, 指定连接方式: 蓝牙/wifi/有线(defualt)
+1. frontend 初始化, 指定连接方式: 蓝牙/wifi/有线(defualt)
     1. 内部调用LuatOS进行检查, ok 则 short, err 则 report
 
       1. PC和esp32之间建立了合法连线，且连接方式为connected
@@ -56,8 +65,20 @@ options: (cargo-like style)
 2.  
 
 ```shell
-ddsctrl init <CONNECTION_METHOD: ble/wifi/connected>
+ddsc init <CONNECTION_METHOD: ble/wifi/connected>
 
+ddsc run ./script.lua # maybe lua, 
+
+ddsc poweroff mcu:3000 # stop the while system in 3000ms
+ddsc poweroff dds:300 # shutdown the DDS module in 300ms
+
+ddsc connect # scan and try to connect to the default  MCU,  NOTICE, you need to open MCU manually!
+ddsc connect --list # scan and list all available MCUs.
+ddsc connect devicename
+
+ddsc monitor -p COM6 -b 115200 # open serial port monitor at the baud rate: 115200
+
+ddsc repl
 ```
 
 ## hardware todos
