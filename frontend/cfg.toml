@@ -1,0 +1,4 @@
+collect = false
+freq_mv = 3223
+volt_mv = "127.0.0.1"
+hostname = "MagicBook Windows 2"

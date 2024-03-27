@@ -1,12 +1,25 @@
 // TODO: REMOVE unnacassary Debug attribute!
-use clap::{crate_version, Args, Parser, Subcommand, ValueEnum};
+use clap::{arg, crate_version, 
+    Args, Parser, 
+    Subcommand, ValueEnum, 
+    ArgAction, ArgGroup};
 // use serial_core::BaudRate;
-use std::{arch::x86_64::_CMP_ORD_Q, fmt::Display, path::PathBuf};
+use std::{fmt::Display, path::PathBuf};
 
 #[cfg(target_os = "windows")]
 const DEFAULT_NAME: &'static str = "MagicBook Windows";
 #[cfg(target_os = "linux")]
 const DEFAULT_NAME: &'static str = "MagicBook Linux";
+
+const MODE_HELP: &'static str = " 
+    how Host to ESP32: iot | wired | ble | wife(default)
+    it's hightly recommanded to directly use the screen to controll DDS 
+    if the screen is touchable.
+    Only if you'd like to collect data for advanced operations or the screen 
+    is not touchable, use the front end.
+    IoT mode is better then Wifi/ble mode, excepting you are considering about 
+    somehow `privacy`?
+    ";
 
 const LONG_VER: &'static str = "
 	MCU: CORE-ESP32C3,
@@ -22,66 +35,93 @@ const LONG_VER: &'static str = "
 #[derive(Parser)]
 #[command(name = "DDS Controller Frontend")]
 #[command(version = crate_version!())]
-#[command(propagate_version = false)]
 #[command(long_version = LONG_VER)]
+#[command(propagate_version = false)]
 #[command(about, long_about = "Command Line DDS-Controller")]
 #[command(bin_name = "ddsc")]
 #[command(propagate_version = true)]
 // #[command(next_line_help = true)]
 // #[command(debug_assert)]
 pub(crate) struct Cli {
-    #[arg(long, help = "set the host name", default_value = DEFAULT_NAME)]
-    pub(super) name: Option<String>,
 
-    #[arg(long, help = "initialize the system and do primary check")]
-    pub(crate) init: bool,
-    #[arg(
-        short = 'm',
-        long,
-        help = " how Host to ESP32,iot | wifi | ble | wired(default)",
-        default_value = "wired"
-    )]
-    pub(crate) mode: Option<CommunicationMethod>,
-
-    #[arg(short, long, value_name = "FILE")]
-    pub(crate) config: Option<PathBuf>,
-
-    /// count: increment a `u8` counter
-    /// default will be 0 is `default_value` is not set
-    #[cfg(test)]
-    #[arg(short, long, action = clap::ArgAction::Count, default_value = "1")]
-    pub(super) test: u8,
-
-    #[deprecated(since = "0.1.1", note = "the remote SSID passing is unsafe")]
-    pub(super) spec_ssid: Option<String>,
-    #[deprecated(since = "0.1.1", note = "the remote SSID passing is unsafe")]
-    pub(super) spec_pwd: Option<String>,
-
-    /// example:
-    /// $ ddsc poweroff=mcu:3000
-    // LEARN how to impl git like git local:remote option
-    #[arg(long, value_name = "POWEROFF:wait")]
-    pub(crate) poweroff: Option<String>,
-
-    /// enable the REPL mode (if repl is sepecified, other options will be ignored)
-    #[arg(
-        long = "repl",
-        help = "enter interactive mode",
-        default_value = "false"
-    )]
-    interactive: bool,
-
-    #[arg(short, long)]
-    pub(super) verbose: bool,
 
     #[command(subcommand)]
-    pub(crate) commands: Option<SubCommands>,
+    pub(crate) commands: Cmds,
 }
 
 #[derive(Subcommand, Debug)]
-pub(crate) enum SubCommands {
+pub(crate) enum Cmds {
+
+
+    #[command(arg_required_else_help = true)]
+    Init
+    {
+        #[arg(
+        short, long, 
+        help = MODE_HELP,
+        )]
+        mode: CommunicationMethod,
+
+    },
+
+
+
+    #[command(arg_required_else_help = true)]
+    Config {
+        #[deprecated(since = "0.1.1", note = "the remote SSID passing is unsafe")]
+        #[arg(long, hide = true)]
+        spec_ssid: Option<String>,
+        #[deprecated(since = "0.1.1", note = "the remote SSID passing is unsafe")]
+        #[arg(long, hide = true)]
+        spec_pwd: Option<String>,
+            // TODO wavetable path parse
+        // #[arg(long, hide = true)]
+        // new_wavetable: Option<PathBuf>,
+        #[arg(short, long, value_name = "FILE")]
+        config: Option<PathBuf>,
+    },
+
+
+    Power {
+    /// example:
+    /// $ ddsc poweroff=mcu:3000
+    // LEARN how to impl git like git local:remote option
+        #[arg(long, 
+            value_name = "POWER=(off)/(off wait)",
+            default_value = "on",
+            action = ArgAction::Set,
+        )]
+        off: bool,
+        #[arg(value_name = "WAIT(ms)")]
+        // TODO add independent to poweron
+        wait: usize,
+    },
+
+
+    Repl {
+        /// enable the REPL mode (if repl is sepecified, other options will be ignored)
+        /// `ddsc interactive`
+        #[arg(
+            long = "interactive",
+            action = ArgAction::SetFalse ,
+            help = "enter interactive mode",
+            default_value = "true", 
+        )]
+        interactive: Option<bool>,
+    },
+
+    #[command(arg_required_else_help = true)]
     Run(RunnerArgs),
+    #[command(arg_required_else_help = true)]
     Monitor(MonitorArgs),
+    #[command(arg_required_else_help = true)]
+    Data(DataArgs),
+}
+
+impl Display for Cmds {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", std::any::TypeId::of::<Self>())
+    }
 }
 
 #[derive(Debug)]
@@ -92,7 +132,6 @@ pub(crate) struct RunnerArgs {
 		value_name = "INSTRUCTIONS",
         long = "input",
         help = "the input the instructions, files OR string",
-		default_value = "{}"
     )]
     //TODO: support input <PathBuf/String>
     pub(super) instruction_input: Option<String>,
@@ -108,6 +147,13 @@ pub(crate) struct MonitorArgs {
 		value_parser = baudrate_range,
 		default_value = "115200")]
     pub baud_rate: Option<usize>,
+}
+
+#[derive(Debug)]
+#[derive(Args)]
+pub(crate) struct DataArgs {
+    #[arg(short, long, help = "")]
+    pub format: Option<String>,
 }
 
 const BAUD_RATE_RANGE: [usize; 18] =  [
@@ -146,7 +192,7 @@ fn baudrate_range(brstr: &str) -> Result<usize, String> {
 #[derive(ValueEnum, Clone, Copy, Debug)]
 pub(crate) enum CommunicationMethod {
     /// must via WLAN
-    IoT,
+    Iot,
     Wifi,
     Ble,
     Wired,
@@ -155,7 +201,7 @@ pub(crate) enum CommunicationMethod {
 impl Display for CommunicationMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mode = match self {
-            Self::IoT => "IoT",
+            Self::Iot => "IoT",
             Self::Wifi => "WLAN,non-IoT",
             Self::Ble => "Bluetooth",
             Self::Wired => "GPIO Wired",
@@ -174,25 +220,25 @@ pub trait FetchInfo {
 	fn version(&self) -> &'static str;
 }
 
-impl FetchInfo for Cli {
-	fn host_name(&self) -> &'static str {
-		DEFAULT_NAME	
-	}	
-	fn mode(&self) -> CommunicationMethod {
-		self.mode.unwrap()
-	}
-	fn monitor(&self) -> Option<(String, usize)> {
-		// IMPL
-		todo!()
-	}
-	fn instruction(&self) -> Option<RunnerArgs> {
-		// IMPL
-		todo!()
-	}
-	 fn version(&self) -> &'static str {
-		LONG_VER
-	}
-}
+// impl FetchInfo for Cli {
+// 	fn host_name(&self) -> &'static str {
+// 		DEFAULT_NAME	
+// 	}	
+// 	fn mode(&self) -> CommunicationMethod {
+// 		self.mode.unwrap()
+// 	}
+// 	fn monitor(&self) -> Option<(String, usize)> {
+// 		// IMPL
+// 		todo!()
+// 	}
+// 	fn instruction(&self) -> Option<RunnerArgs> {
+// 		// IMPL
+// 		todo!()
+// 	}
+// 	 fn version(&self) -> &'static str {
+// 		LONG_VER
+// 	}
+// }
 
 
 
