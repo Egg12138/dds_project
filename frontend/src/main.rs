@@ -26,7 +26,7 @@ fn main() {
 
         Cmds::Init { mode } => control::init_system(mode),
         Cmds::Run(runner) => {
-            config::test_watch();
+            config::quick_input_watcher();
         }
         _ => {}
     }
@@ -36,6 +36,8 @@ fn main() {
 mod test {
     use super::*;
     use crate::cli::Cli;
+    use crate::config;
+    use crate::control;
     use clap::{Command, Subcommand};
 
     const CMDS: [&'static str; 8] = [

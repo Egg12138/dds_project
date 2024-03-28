@@ -7,11 +7,11 @@ use clap::{arg, crate_version,
 use std::{fmt::Display, path::PathBuf};
 
 #[cfg(target_os = "windows")]
-const DEFAULT_NAME: &'static str = "MagicBook Windows";
+pub(crate) const DEFAULT_NAME: &str = "MagicBook Windows";
 #[cfg(target_os = "linux")]
-const DEFAULT_NAME: &'static str = "MagicBook Linux";
+pub(crate) const DEFAULT_NAME: &str = "MagicBook Linux";
 
-const MODE_HELP: &'static str = " 
+const MODE_HELP: &str = " 
     how Host to ESP32: iot | wired | ble | wife(default)
     it's hightly recommanded to directly use the screen to controll DDS 
     if the screen is touchable.

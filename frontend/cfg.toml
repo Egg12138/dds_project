@@ -1,4 +1,5 @@
+hostname = "MagicBook Windows WSL"
+freq_hz = 30000.1
+vol_mv = 333.14
+ph_oft = 0
 collect = false
-freq_mv = 3223
-volt_mv = "127.0.0.1"
-hostname = "MagicBook Windows 2"

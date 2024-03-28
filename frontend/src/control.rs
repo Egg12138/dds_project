@@ -1,4 +1,6 @@
 // use std::error::Error;
+use serde::{Deserialize, Serialize};
+use serde_json::{self, json};
 use std::fmt::Display;
 
 use crate::cli;
@@ -37,3 +39,9 @@ fn _try_connect(_mode: cli::CommunicationMethod) -> Result<i32, DDSError> {
     Ok(1)
 }
 fn check_esp32() {}
+
+pub(crate) fn send_msg(encoded: String) {
+    println!("[Transfer Emulator]: {}", encoded);
+    let decoded = json!(encoded);
+    println!("[Transfer Decoder]: {}, Sent!", decoded);
+}

@@ -11,6 +11,7 @@ dependencies = [
  "lazy_static",
  "notify",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
