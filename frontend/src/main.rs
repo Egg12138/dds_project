@@ -1,6 +1,15 @@
+#![allow(
+    deprecated,
+    non_upper_case_globals,
+    non_snake_case,
+    clippy::upper_case_acronyms
+)]
+#![feature(ip_bits)]
+
 use clap::Parser;
 
 use crate::cli::Cmds;
+use colored::Colorize;
 
 // macros
 // command line input parse
@@ -13,7 +22,6 @@ use cli::Cli;
 
 fn main() {
     let args = Cli::parse();
-    println!("{:#?}", args);
 
     match args.commands {
         Cmds::Repl { interactive } => {
@@ -25,11 +33,15 @@ fn main() {
         }
 
         Cmds::Init { mode } => control::init_system(mode),
-        Cmds::Run(runner) => {
-            config::quick_input_watcher();
-        }
+        Cmds::PowerOff { wait } => control::poweroff(wait),
+
+        Cmds::Run(runner) => config::quick_input_watcher(runner.instruction_input),
+
+        Cmds::Monitor(monitor) => control::serial_monitor(),
         _ => {}
     }
+
+    log_func!();
 }
 
 #[cfg(test)]

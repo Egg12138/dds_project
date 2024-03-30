@@ -2,7 +2,7 @@
 use clap::{arg, crate_version, 
     Args, Parser, 
     Subcommand, ValueEnum, 
-    ArgAction, ArgGroup};
+    ArgAction};
 // use serial_core::BaudRate;
 use std::{fmt::Display, path::PathBuf};
 
@@ -21,7 +21,7 @@ const MODE_HELP: &str = "
     somehow `privacy`?
     ";
 
-const LONG_VER: &'static str = "
+const LONG_VER: &str = "
 	MCU: CORE-ESP32C3,
 	DDS module: ad9910(for example)
 	binary: ddsc
@@ -31,7 +31,6 @@ const LONG_VER: &'static str = "
 
 // GOAL: render all options in colors
 /// Cli
-#[derive(Debug)] // TODO: remove the attribute
 #[derive(Parser)]
 #[command(name = "DDS Controller Frontend")]
 #[command(version = crate_version!())]
@@ -49,7 +48,7 @@ pub(crate) struct Cli {
     pub(crate) commands: Cmds,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand)]
 pub(crate) enum Cmds {
 
 
@@ -66,6 +65,7 @@ pub(crate) enum Cmds {
 
 
 
+    #[deprecated]
     #[command(arg_required_else_help = true)]
     Config {
         #[deprecated(since = "0.1.1", note = "the remote SSID passing is unsafe")]
@@ -82,21 +82,17 @@ pub(crate) enum Cmds {
     },
 
 
-    Power {
+    PowerOff{
     /// example:
-    /// $ ddsc poweroff=mcu:3000
+    /// $ ddsc power=mcu:3000
     // LEARN how to impl git like git local:remote option
-        #[arg(long, 
-            value_name = "POWER=(off)/(off wait)",
-            default_value = "on",
-            action = ArgAction::Set,
-        )]
-        off: bool,
-        #[arg(value_name = "WAIT(ms)")]
-        // TODO add independent to poweron
-        wait: usize,
+        #[arg(default_value = "0")]
+        wait: Option<u64>
     },
 
+    PowerOn,
+
+    
 
     Repl {
         /// enable the REPL mode (if repl is sepecified, other options will be ignored)
@@ -124,17 +120,15 @@ impl Display for Cmds {
     }
 }
 
-#[derive(Debug)]
 #[derive(Args)]
 pub(crate) struct RunnerArgs {
     #[arg(
-        short,
 		value_name = "INSTRUCTIONS",
-        long = "input",
         help = "the input the instructions, files OR string",
     )]
     //TODO: support input <PathBuf/String>
-    pub(super) instruction_input: Option<String>,
+    pub(super) instruction_input: String,
+    // pub(super) input: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -265,6 +259,7 @@ pub trait FetchInfo {
 
 //NOTICE remove deprecated parts --------------------
 
+#[allow(unused)]
 #[deprecated(since = "0.1.1", note = "it's better to directly parse number as baud rate!")]
 #[derive(Debug, ValueEnum, Clone, Copy)]
 pub(crate) enum BaudRate {
@@ -289,6 +284,7 @@ pub(crate) enum BaudRate {
 }
 
 impl Display for BaudRate {
+#[allow(unused)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let variant_field = format!("{:?}", self);
         write!(f, "{:?}", &variant_field[4..])
@@ -298,6 +294,7 @@ impl Display for BaudRate {
 #[deprecated(since = "0.1.1", note = "it's better to directly parse number as baud rate!")]
 impl BaudRate {
     /// actually, the return is undoubely valid . I still return `Result`
+#[allow(unused)]
     pub(crate) fn get(&self) -> Result<usize, <usize as std::str::FromStr>::Err> {
         let variant_field = format!("{:?}", self);
         variant_field[4..].parse::<usize>()

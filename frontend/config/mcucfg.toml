@@ -1,0 +1,12 @@
+debug = true
+
+[connection]
+ip = "127.0.0.1" # ipv4 of the MCU
+# pwd = "liyuan11328" # if necassary
+
+[iot]
+public_key = "public key demo"
+private_key = "123456"
+
+
+

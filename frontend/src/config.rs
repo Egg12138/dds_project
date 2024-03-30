@@ -1,19 +1,29 @@
 #![allow(deprecated)]
+
 use crate::control;
-use config::{Config, ConfigError, File, FileFormat, FileStoredFormat, Format, Value, ValueKind};
+use crate::log_func;
+use colored::Colorize;
+use config::{Config, ConfigError, Environment, File};
 use lazy_static::lazy_static;
-use notify::{Event, EventHandler, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::collections::HashMap;
+use std::env;
+use std::net::{AddrParseError, Ipv4Addr};
+use std::ops::Add;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::{mpsc::channel, RwLock};
 use std::time::Duration;
-use std::{collections::HashMap, error::Error};
 
 const CFG_WATCH_INT: u64 = 2; // in seconds
-/// the local configuration TOML file in the {workspace},
-/// config.rs will handle it first.
-const LOCAL_CFG: &str = "cfg.toml";
+/// the `dds input` local configuration TOML file in the {workspace},
+const LOCAL_CFG: &str = "./config/cfg.toml";
+/// mcu settings
+const LOCAL_MCU_CFG: &str = "./config/mcucfg.toml";
+const DEFAULT_MCU_CFG: &str = "/.config/default_mcgcfg.toml";
+const ENV_PREFIX: &str = "dds";
 
 lazy_static! {
     static ref CFG: RwLock<Config> = RwLock::new({
@@ -23,19 +33,93 @@ lazy_static! {
     });
 }
 
+/// Parse json field string as IPv4,
 #[repr(C)]
-#[derive(Debug, Deserialize, Serialize)]
-pub struct DDSConfig {
-    pub host_name: String,
-    pub maxfreq_hz: f64,
-    pub maxvol_mv: f64,
+#[derive(Debug, Deserialize)]
+pub struct MCU {
+    debug: bool,
+    connection: Connection,
+    iot: IoT,
 }
 
-impl DDSConfig {
-    // TODO add_source(Environment::with_prefix("ddscfg"))
-    // let host_name = crate::cli::DEFAULT_NAME.to_string();
+#[repr(C)]
+#[allow(unused)]
+#[derive(Debug, Deserialize)]
+struct Connection {
+    ip: Ipv4Addr,
 }
 
+#[repr(C)]
+#[allow(unused)]
+#[derive(Debug, Deserialize)]
+struct IoT {
+    public_key: String,
+    private_key: String,
+}
+
+impl FromStr for Connection {
+    type Err = AddrParseError;
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match Ipv4Addr::from_str(s) {
+            Ok(ip) => Ok(Self { ip }),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+impl From<u32> for Connection {
+    #[inline]
+    fn from(value: u32) -> Self {
+        Connection {
+            ip: Ipv4Addr::from_bits(value),
+        }
+    }
+}
+
+impl From<[u8; 4]> for Connection {
+    #[inline]
+    fn from(value: [u8; 4]) -> Self {
+        Connection {
+            ip: Ipv4Addr::from(value),
+        }
+    }
+}
+
+impl MCU {
+    pub(crate) fn new() -> Result<Self, ConfigError> {
+        let s = Config::builder()
+            .add_source(File::with_name(LOCAL_MCU_CFG))
+            .add_source(File::with_name(DEFAULT_MCU_CFG).required(false))
+            // add in cfgs from the environment (with a prefix of DDS)
+            .add_source(Environment::with_prefix(ENV_PREFIX))
+            .build()?;
+        println!("[MCU::new] debug: {:?}", s.get_bool("debug"));
+        println!(
+            "[MCU::new] private key: {:?}",
+            s.get::<String>("connection.ip")
+        );
+        println!("[MCU::new] table: {:?}", s.get_table("iot"));
+        log_func!(red:"done");
+        s.try_deserialize()
+    }
+
+    pub(crate) fn debug(&self) -> bool {
+        self.debug
+    }
+    pub(crate) fn ip(&self) -> Ipv4Addr {
+        self.connection.ip
+    }
+    pub(crate) fn pub_key(&self) -> &String {
+        &self.iot.public_key
+    }
+    pub(crate) fn privt_key(&self) -> &String {
+        &self.iot.private_key
+    }
+}
+
+/// a standard collection of data to be sent.
+/// but `quick_Watcher` is a faster way to sending messages.
 #[repr(C)]
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Input {
@@ -88,10 +172,7 @@ impl Input {
     }
 
     pub(crate) fn new(path: &str) -> Self {
-        if let Ok(builder) = Config::builder()
-            .add_source(File::with_name(path.clone()))
-            .build()
-        {
+        if let Ok(builder) = Config::builder().add_source(File::with_name(path)).build() {
             builder.try_deserialize().unwrap_or_default()
         } else {
             eprintln!("failed to build config from the {}", path);
@@ -101,11 +182,6 @@ impl Input {
 
     fn handle(&mut self) {
         let cfgmap = CFG.read().unwrap().clone();
-        // IMPL hostname, freq, vol, offset, parser....
-        // IMPL invalid?
-        // IMPL println!
-        // IMPL set to dds(communication)
-        // IMPL 然后就是进入communcation模块！
         if let input = Input::from(cfgmap) {
             self.freq_hz = input.freq_hz;
             self.vol_mv = input.vol_mv;
@@ -122,6 +198,7 @@ impl Input {
         control::send_msg(encoded);
     }
 
+    #[allow(unsued)]
     pub fn watch_dds_input(&mut self) {
         let (tx, rx) = channel();
         let mut watcher: RecommendedWatcher = Watcher::new(
@@ -151,6 +228,8 @@ impl Input {
                 _ => {}
             }
         }
+
+        log_func!();
     }
 
     fn freq_valid(&self) -> bool {
@@ -171,7 +250,7 @@ impl Input {
     }
 }
 
-pub(crate) fn quick_input_watcher() {
+pub(crate) fn quick_input_watcher(script: String) {
     // lazy_static! {
     //     static ref SETTINGS: RwLock<Config> = RwLock::new({
     //         let mut settings = Config::default();
@@ -217,10 +296,12 @@ pub(crate) fn quick_input_watcher() {
                     kind: notify::event::EventKind::Modify(_),
                     ..
                 })) => {
-                    println!(
-                        " * [{}] is modified; refreshing configuration ...",
-                        LOCAL_CFG
-                    );
+                    // println!(
+                    // " * [{}] is modified; refreshing configuration ...",
+                    // LOCAL_CFG
+                    // );
+
+                    log_func!(" dds input is modified");
                     // TODO remove unwraps.
                     let input = CFG
                         .write()
@@ -243,6 +324,7 @@ pub(crate) fn quick_input_watcher() {
         }
     }
 
+    control::execute(script);
     show();
     watch();
 }
@@ -286,6 +368,7 @@ fn config_demo() {
 #[test]
 fn config_global() {
     use super::*;
+    use std::error::Error;
     use std::sync::RwLock;
 
     lazy_static! {
