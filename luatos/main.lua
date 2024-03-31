@@ -5,69 +5,71 @@ require("sysplus")
 local checker = require("checks")
 
 if wdt then
-  wdt.init(9000)
-  sys.timerLoopStart(wdt.feed, 3000)
+	wdt.init(9000)
+	sys.timerLoopStart(wdt.feed, 3000)
 end
 
 -- TODO: finished this...
 sys.taskInit(function ()
-  -- initialize
+	--    INIT
 
-  checker.wifi_checks()
+	checker.wifi_checks()
 
-  checker.rtc_checks()
+	checker.rtc_checks()
 
-  checker.http_checks()
-  -- esp-idf : cpu_info 
-  -- esp-idf : wifi config status
-  -- esp-idf : bluetooth config, status
-  -- meminfo
-  -- wifi init
-  -- bluetooth init 
-  -- RAINMAKER
-  -- coroutine:?
-    -- monitor the input callback data 
-    -- wait for events from { RAINMAKER, COMMANDLINE}
+	checker.http_checks()
+	-- meminfo
+
+	checker.wifi_checks()
+	-- checker.screen_checks()
+
+
+			-- try connect to 
+				-- wifi init
+				-- bluetooth init 
+				-- screen init
+
+			-- MAIN loop :
+				-- sys.waitUntil Message
+					-- callback: 
+						-- send to DDS module
+						-- screen display
+						-- waiting for DDS feedback
+						-- screen display
 
 end )
 
 sys.subscribe("WLAN_SCAN_DONE", function()
-  local result = wlan.scanResult()
-  _G.scan_result = {}
-  for k,v in pairs(result) do
-    log.info("scan",
-      (v["ssid"] and #v["ssid"] > 0)
-      and
-      v["ssid"] or "[隐藏SSID]", v["rssi"], (v["bssid"]:toHex()))
-    if v["ssid"] and #v["ssid"] > 0 then
-        table.insert(_G.scan_result, v["ssid"])
-    end
-  end
-  log.info("scan", "aplist", json.encode(_G.scan_result))
+	local result = wlan.scanResult()
+	_G.scan_result = {}
+	for k,v in pairs(result) do
+		log.info("scan",
+			(v["ssid"] and #v["ssid"] > 0)
+			and
+			v["ssid"] or "[隐藏SSID]", v["rssi"], (v["bssid"]:toHex()))
+		if v["ssid"] and #v["ssid"] > 0 then
+				table.insert(_G.scan_result, v["ssid"])
+		end
+	end
+	log.info("scan", "aplist", json.encode(_G.scan_result))
 end
 )
 
 sys.subscribe("IP_READY", function()
-  log.info("wlan", "conected", ">>>>>>>>>>>>>>")
-  sys.taskInit(function()
-    sys.wait(1000)
-    -- 以下是rtkv库的模拟实现, 这里就不强制引入rtkv了
-    local token = mcu.unique_id():toHex()
-    local device = wlan.getMac()
-    local params = "device=" .. device .. "&token=" .. token
-    params = params .. "&key=ip&value=" .. (socket.localIP())
-    local code = http.request("GET", "http://rtkv.air32.cn/api/rtkv/set?" .. params, {timeout=3000}).wait()
-    log.info("上报结果", code)
+	log.info("wlan", "conected", ">>>>>>>>>>>>>>")
+	sys.taskInit(function()
+		sys.wait(1000)
+		-- 以下是rtkv库的模拟实现, 这里就不强制引入rtkv了
+		local token = mcu.unique_id():toHex()
+		local device = wlan.getMac()
+		local params = "device=" .. device .. "&token=" .. token
+		params = params .. "&key=ip&value=" .. (socket.localIP())
+		local code = http.request("GET", "http://rtkv.air32.cn/api/rtkv/set?" .. params, {timeout=3000}).wait()
+		log.info("上报结果", code)
 end)
 
 end
 )
-
-
-
-
-
-
 
 
 
