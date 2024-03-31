@@ -2,6 +2,7 @@ debug = true
 
 [connection]
 ip = "127.0.0.1" # ipv4 of the MCU
+mode = "wifi"
 # pwd = "liyuan11328" # if necassary
 
 [iot]

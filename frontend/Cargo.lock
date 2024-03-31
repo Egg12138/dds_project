@@ -3,7 +3,7 @@
 version = 3
 
 [[package]]
-name = "Demo-Frontend"
+name = "DDSCLIControl"
 version = "0.1.1"
 dependencies = [
  "clap",

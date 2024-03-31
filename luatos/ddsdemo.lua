@@ -7,6 +7,7 @@ _G.sys = require("sys")
 srv = require "luatos.tcpsrv"
 spi = require "luatos.dds_spi"
 
+---@diagnostic disable-next-line: different-requires
 wifihelper = require "luatos.wifi-utils"
 
 if mcu then

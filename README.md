@@ -12,9 +12,7 @@ TODO: 5. html controller
 
 有可能改成 python 实现，最后整个项目可能就会是:
 
-
-
-#### layout 
+#### layout
 
 * xmake build
 * python/Rust backend
@@ -41,25 +39,24 @@ options/actions: (git/cargo-like style)
   * `poweroff=dds,10s`
   * `poweroff=mcu`  (default value: immediately)
 <!-- * `pause` -   (pause the DDS output) -->
-* `monitor -p <PORT> -b <BAUD_RATE>` (参考idf.py) 
+* `monitor -p <PORT> -b <BAUD_RATE>` (参考idf.py)
   > draw panel
   > 输入freq, 输入amp, 实际输出freq, 实际输出amp,..., ADC, DAC info, wifi, bluetooth info
   > 实时反馈
 * `repl` - Option ON/OFF and **do nothing on other options**
-  * 
+  *
 * ~~`menuconfig` (HARD to implement)~~
-
 
 步骤:
 
 1. frontend 初始化, 指定连接方式: 蓝牙/wifi/有线(defualt)
     1. 内部调用LuatOS进行检查, ok 则 short, err 则 report
 
-      1. PC和esp32之间建立了合法连线，且连接方式为connected
+    1. PC和esp32之间建立了合法连线，且连接方式为connected
 
-      2. PC和esp32之间建立了合法连线，但连接方式不是connected
+    2. PC和esp32之间建立了合法连线，但连接方式不是connected
 
-      3. PC和esp32建立了错误连线()，但连接方式是connected **未必有这种情况，因为我们可以SPI一条线传输控制信号**
+    3. PC和esp32建立了错误连线()，但连接方式是connected **未必有这种情况，因为我们可以SPI一条线传输控制信号**
 
     2. 检查
 2.  
@@ -80,6 +77,8 @@ ddsc monitor -p COM6 -b 115200 # open serial port monitor at the baud rate: 1152
 
 ddsc repl
 ```
+##### notes
+
+* 跨线程的全局变量 `STATUS` (TODO)， 保证通信时的线程安全
 
 ## hardware todos
-

@@ -3,11 +3,14 @@ use clap::{arg, crate_version,
     Args, Parser, 
     Subcommand, ValueEnum, 
     ArgAction};
+use serde::Deserialize;
 // use serial_core::BaudRate;
 use std::{fmt::Display, path::PathBuf};
 
 #[cfg(target_os = "windows")]
+#[allow(dead_code)]
 pub(crate) const DEFAULT_NAME: &str = "MagicBook Windows";
+#[allow(dead_code)]
 #[cfg(target_os = "linux")]
 pub(crate) const DEFAULT_NAME: &str = "MagicBook Linux";
 
@@ -52,16 +55,6 @@ pub(crate) struct Cli {
 pub(crate) enum Cmds {
 
 
-    #[command(arg_required_else_help = true)]
-    Init
-    {
-        #[arg(
-        short, long, 
-        help = MODE_HELP,
-        )]
-        mode: CommunicationMethod,
-
-    },
 
 
 
@@ -129,6 +122,13 @@ pub(crate) struct RunnerArgs {
     //TODO: support input <PathBuf/String>
     pub(super) instruction_input: String,
     // pub(super) input: Option<PathBuf>,
+        #[arg(
+        short, long, 
+        help = MODE_HELP,
+        )]
+        pub(super) mode: CommunicationMethod,
+
+
 }
 
 #[derive(Debug)]
@@ -183,7 +183,7 @@ fn baudrate_range(brstr: &str) -> Result<usize, String> {
 }
 
 /// only IoT options is using the remote IoT
-#[derive(ValueEnum, Clone, Copy, Debug)]
+#[derive(ValueEnum, Clone, Copy, Debug, Deserialize)]
 pub(crate) enum CommunicationMethod {
     /// must via WLAN
     Iot,
@@ -203,40 +203,6 @@ impl Display for CommunicationMethod {
         write!(f, "{}", mode)
     }
 }
-
-//TODO remove publice disgs of fileds
-pub trait FetchInfo {
-	fn host_name(&self) -> &'static str;
-	fn mode(&self) -> CommunicationMethod;
-	/// return port
-	fn monitor(&self) -> Option<(String, usize)>;
-	fn instruction(&self) -> Option<RunnerArgs>;
-	fn version(&self) -> &'static str;
-}
-
-// impl FetchInfo for Cli {
-// 	fn host_name(&self) -> &'static str {
-// 		DEFAULT_NAME	
-// 	}	
-// 	fn mode(&self) -> CommunicationMethod {
-// 		self.mode.unwrap()
-// 	}
-// 	fn monitor(&self) -> Option<(String, usize)> {
-// 		// IMPL
-// 		todo!()
-// 	}
-// 	fn instruction(&self) -> Option<RunnerArgs> {
-// 		// IMPL
-// 		todo!()
-// 	}
-// 	 fn version(&self) -> &'static str {
-// 		LONG_VER
-// 	}
-// }
-
-
-
-
 
 
 
@@ -259,7 +225,7 @@ pub trait FetchInfo {
 
 //NOTICE remove deprecated parts --------------------
 
-#[allow(unused)]
+#[allow(unused, deprecated)]
 #[deprecated(since = "0.1.1", note = "it's better to directly parse number as baud rate!")]
 #[derive(Debug, ValueEnum, Clone, Copy)]
 pub(crate) enum BaudRate {
@@ -284,7 +250,7 @@ pub(crate) enum BaudRate {
 }
 
 impl Display for BaudRate {
-#[allow(unused)]
+#[allow(unused, deprecated)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let variant_field = format!("{:?}", self);
         write!(f, "{:?}", &variant_field[4..])
@@ -294,7 +260,7 @@ impl Display for BaudRate {
 #[deprecated(since = "0.1.1", note = "it's better to directly parse number as baud rate!")]
 impl BaudRate {
     /// actually, the return is undoubely valid . I still return `Result`
-#[allow(unused)]
+#[allow(unused, deprecated)]
     pub(crate) fn get(&self) -> Result<usize, <usize as std::str::FromStr>::Err> {
         let variant_field = format!("{:?}", self);
         variant_field[4..].parse::<usize>()

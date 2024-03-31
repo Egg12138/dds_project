@@ -1,5 +1,6 @@
 #![allow(deprecated)]
 
+use crate::cli::CommunicationMethod;
 use crate::control;
 use crate::log_func;
 use colored::Colorize;
@@ -7,11 +8,8 @@ use config::{Config, ConfigError, Environment, File};
 use lazy_static::lazy_static;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::collections::HashMap;
-use std::env;
 use std::net::{AddrParseError, Ipv4Addr};
-use std::ops::Add;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::{mpsc::channel, RwLock};
@@ -36,7 +34,7 @@ lazy_static! {
 /// Parse json field string as IPv4,
 #[repr(C)]
 #[derive(Debug, Deserialize)]
-pub struct MCU {
+pub(crate) struct MCU {
     debug: bool,
     connection: Connection,
     iot: IoT,
@@ -47,6 +45,7 @@ pub struct MCU {
 #[derive(Debug, Deserialize)]
 struct Connection {
     ip: Ipv4Addr,
+    mode: CommunicationMethod,
 }
 
 #[repr(C)]
@@ -57,34 +56,35 @@ struct IoT {
     private_key: String,
 }
 
-impl FromStr for Connection {
-    type Err = AddrParseError;
-    #[inline]
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match Ipv4Addr::from_str(s) {
-            Ok(ip) => Ok(Self { ip }),
-            Err(e) => Err(e),
-        }
-    }
-}
+// impl FromStr for Connection {
+//     type Err = AddrParseError;
+//     #[inline]
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//         match Ipv4Addr::from_str(s) {
+//             Ok(ip) => Ok(Self { ip }),
+//             Err(e) => Err(e),
+//         }
+//     }
+// }
 
-impl From<u32> for Connection {
-    #[inline]
-    fn from(value: u32) -> Self {
-        Connection {
-            ip: Ipv4Addr::from_bits(value),
-        }
-    }
-}
+// impl From<u32> for Connection {
+//     #[inline]
+//     fn from(value: u32) -> Self {
+//         Connection {
+//             ip: Ipv4Addr::from_bits(value),
+//         }
+//     }
+// }
 
-impl From<[u8; 4]> for Connection {
-    #[inline]
-    fn from(value: [u8; 4]) -> Self {
-        Connection {
-            ip: Ipv4Addr::from(value),
-        }
-    }
-}
+// impl From<[u8; 4]> for Connection {
+//     #[inline]
+//     fn from(value: [u8; 4]) -> Self {
+//         Connection {
+//             ip: Ipv4Addr::from(value),
+
+//         }
+//     }
+// }
 
 impl MCU {
     pub(crate) fn new() -> Result<Self, ConfigError> {
@@ -110,6 +110,10 @@ impl MCU {
     pub(crate) fn ip(&self) -> Ipv4Addr {
         self.connection.ip
     }
+    pub(crate) fn mode(&self) -> CommunicationMethod {
+        self.connection.mode
+    }
+
     pub(crate) fn pub_key(&self) -> &String {
         &self.iot.public_key
     }
@@ -132,7 +136,6 @@ pub struct Input {
 impl Default for Input {
     /// read from cfg.toml, or else return the default inputs.
     fn default() -> Self {
-        let path = Path::new("cfg.toml");
         if let Ok(cfg) = Config::builder()
             .add_source(config::File::with_name("cfg.toml"))
             .build()
@@ -159,6 +162,7 @@ impl From<Config> for Input {
     }
 }
 
+#[allow(unused)]
 impl Input {
     #[deprecated]
     fn _syslevel_path() -> &'static str {
@@ -182,12 +186,11 @@ impl Input {
 
     fn handle(&mut self) {
         let cfgmap = CFG.read().unwrap().clone();
-        if let input = Input::from(cfgmap) {
-            self.freq_hz = input.freq_hz;
-            self.vol_mv = input.vol_mv;
-            self.ph_oft = input.ph_oft;
-            self.collect = input.collect;
-        }
+        let input = Input::from(cfgmap);
+        self.freq_hz = input.freq_hz;
+        self.vol_mv = input.vol_mv;
+        self.ph_oft = input.ph_oft;
+        self.collect = input.collect;
 
         println!(
             "* Input:: 
@@ -198,7 +201,7 @@ impl Input {
         control::send_msg(encoded);
     }
 
-    #[allow(unsued)]
+    // #[allow(unused)]
     pub fn watch_dds_input(&mut self) {
         let (tx, rx) = channel();
         let mut watcher: RecommendedWatcher = Watcher::new(
@@ -224,12 +227,15 @@ impl Input {
                     assert!(CFG.write().unwrap().refresh().is_ok());
                     self.handle();
                 }
-                Err(e) => eprintln!("error: {:?}", e),
+                Err(e) => {
+                    eprintln!("error: {:?}", e);
+                    break;
+                }
                 _ => {}
             }
         }
 
-        log_func!();
+        log_func!(red:"unexpected RecvError!");
     }
 
     fn freq_valid(&self) -> bool {

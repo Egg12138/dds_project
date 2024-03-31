@@ -4,7 +4,7 @@
     non_snake_case,
     clippy::upper_case_acronyms
 )]
-#![feature(ip_bits)]
+#![feature(ip_bits, const_refs_to_static)]
 
 use clap::Parser;
 
@@ -32,12 +32,11 @@ fn main() {
             }
         }
 
-        Cmds::Init { mode } => control::init_system(mode),
         Cmds::PowerOff { wait } => control::poweroff(wait),
 
-        Cmds::Run(runner) => config::quick_input_watcher(runner.instruction_input),
+        Cmds::Run(runner) => control::run(runner),
 
-        Cmds::Monitor(monitor) => control::serial_monitor(),
+        Cmds::Monitor(_) => control::monitor(),
         _ => {}
     }
 
