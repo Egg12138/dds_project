@@ -1,4 +1,4 @@
-#include "AD9959.h"
+#include "ref.h"
 
 uint8_t CSR_DATA0[1] = {0x10};                                               // Enable CH0
 uint8_t CSR_DATA1[1] = {0x20};                                               // Enable CH1

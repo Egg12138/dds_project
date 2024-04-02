@@ -76,7 +76,7 @@ end
 GPIOD_ODR_ADDR = 0x40020C14
 GPIOD_IDR_ADDR = 0x40020C10
 
--- TODO lua ffi is needed
+-- TODO lua FFI is needed
 
 -- @description => DDS module: AD9959
 function init_DDS()

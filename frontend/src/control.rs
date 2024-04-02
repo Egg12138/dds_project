@@ -1,3 +1,7 @@
+//! the module to controlling the *frontend*
+//! ,generating data packet, and communication to MCU
+//! including the majority of the system logic.
+
 use colored::Colorize;
 use config::ConfigError;
 use core::panic;
@@ -7,6 +11,7 @@ use std::sync::Once;
 use crate::{
     cli::{self, CommunicationMethod, RunnerArgs},
     config::{quick_input_watcher, MCU},
+    ddserror::DDSError,
 };
 use serde_json::json;
 use std::{fmt::Display, process::exit, thread, time::Duration};
@@ -168,24 +173,6 @@ pub const fn has_connected() -> bool {
     unsafe { *HAS_CONNECTED }
 }
 
-/// fault error
-#[allow(unused)]
-#[derive(Debug)]
-pub enum DDSError {
-    ConnectionLost,
-    Forbidden,
-    NoTarget,
-    #[doc(hidden)]
-    #[cfg(feature = "failpoints")]
-    FailPoint,
-}
-
-impl Display for DDSError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
 pub(crate) fn repl() {
     unsafe {
         if !REPL_ENABLED {
@@ -265,7 +252,7 @@ pub(crate) fn send_msg(encoded: String) {
     println!("{}", encoded);
 
     unsafe {
-        let decoded = match (MODE) {
+        let decoded = match MODE {
             CommunicationMethod::Ble => {
                 log_func!(on_bright_magenta:"Sending via Ble");
                 json!(encoded)

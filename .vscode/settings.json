@@ -10,5 +10,9 @@
     ".\\frontend\\Cargo.toml",
     ".\\frontend\\Cargo.toml",
     ".\\frontend\\Cargo.toml"
-  ]
+  ],
+  "files.associations": {
+    "*.c": "c",
+    "ref.h": "c"
+  }
 }

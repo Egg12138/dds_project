@@ -17,6 +17,8 @@ use colored::Colorize;
 mod cli;
 mod config;
 mod control;
+mod data;
+mod ddserror;
 
 use cli::Cli;
 
