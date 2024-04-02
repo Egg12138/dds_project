@@ -7,12 +7,12 @@ use serde::Deserialize;
 // use serial_core::BaudRate;
 use std::{fmt::Display, path::PathBuf};
 
-#[cfg(target_os = "windows")]
+#[cfg(target_family = "windows")]
 #[allow(dead_code)]
 pub(crate) const DEFAULT_NAME: &str = "MagicBook Windows";
 #[allow(dead_code)]
-#[cfg(target_os = "linux")]
-pub(crate) const DEFAULT_NAME: &str = "MagicBook Linux";
+#[cfg(target_family = "linux")]
+pub(crate) const DEFAULT_NAME: &str = "MagicBook Unix";
 
 const MODE_HELP: &str = " 
     how Host to ESP32: iot | wired | ble | wife(default)

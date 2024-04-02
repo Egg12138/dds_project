@@ -1,5 +1,5 @@
 hostname = "MagicBook Windows WSL"
-freq_hz = 30000.11
+freq_hz = 30000.111111111111
 vol_mv = 333.14
-ph_oft = 0
-collect = false
+ph_oft = 120
+indication = "setinput"

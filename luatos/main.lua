@@ -1,76 +1,161 @@
-PROJECT = "DDS-DEMO"
-VERSION = "0.1.2"
+PROJECT = "demo-9959"
+VERSION = "0.1.1"
+Provider = "PROV_eggs"
+Password = "liyuan11328"
+
 _G.sys = require("sys")
-require("sysplus")
-local checker = require("checks")
+srv = require "tcpsrv"
+spi = require "dds_spi"
 
-if wdt then
-	wdt.init(9000)
-	sys.timerLoopStart(wdt.feed, 3000)
+local ffi = require "ffi"
+
+---@diagnostic disable-next-line: different-requires
+wifihelper = require "wifi-utils"
+
+if mcu then
+  mcu.setClk(40) 
+  -- mcu.setClk(240)
 end
 
--- TODO: finished this...
-sys.taskInit(function ()
-	--    INIT
+-- local DDS_WIFI = {}
 
-	checker.wifi_checks()
+-- registers 
+-- ID = register addr
+CSR_ID    = 0x00   --CSR  Channel Select Register(通道选择寄存器)                1 Bytes
+FR1_ID    = 0x01   --FR1  Function Register 1(功能寄存器1)                       3 Bytes
+FR2_ID    = 0x02   --FR2  Function Register 2(功能寄存器2)                       2 Bytes
+CFR_ID    = 0x03   --CFR  Channel Function Register(通道功能寄存器)              3 Bytes
+CFTW0_ID  = 0x04   --CTW0 Channel Frequency Tuning Word 0(通道频率转换字寄存器)  4 Bytes
+CPOW0_ID  = 0x05   --CPW0 Channel Phase Offset Word 0(通道相位转换字寄存器)      2 Bytes
+ACR_ID    = 0x06   --ACR  Amplitude Control Register(幅度控制寄存器)             3 Bytes
+LSRR_ID   = 0x07   --LSR  Linear Sweep Ramp Rate(通道线性扫描寄存器)             2 Bytes
+RDW_ID    = 0x08   --RDW  LSR Rising Delta Word(通道线性向上扫描寄存器)          4 Bytes
+FDW_ID    = 0x09   --FDW  LSR Falling Delta Word(通道线性向下扫描寄存器)         4 Bytes
 
-	checker.rtc_checks()
+-- Pins
 
-	checker.http_checks()
-	-- meminfo
+CSB_DDS_Pin = 15
+UPD_DDS_Pin = 5
+RST_DDS_Pin = 4
+SYSFREQ_DDS = 800137209
 
-	checker.wifi_checks()
-	-- checker.screen_checks()
+HIGH = gpio.HIGH
+LOW = gpio.LOW
+PULLUP = gpio.PULLUP
+PULLDOWN = gpio.PULLDOWN
+OUT0 = 0 -- gpio out mode, with init volt = 0 (LOW)
+OUT1 = 1 -- init volt = 1 (HIGH)
+IN = nil -- gpio input mode
 
 
-			-- try connect to 
-				-- wifi init
-				-- bluetooth init 
-				-- screen init
+-- uint8 *
+CSR_DATA0 = {0x10} 
+CSR_DATA1 = {0x20}
+CSR_DATA2 = {0x40}
+CSR_DATA3 = {0x80}
 
-			-- MAIN loop :
-				-- sys.waitUntil Message
-					-- callback: 
-						-- send to DDS module
-						-- screen display
-						-- waiting for DDS feedback
-						-- screen display
+FR2_DATA = {[0] = 0x00, [1] = 0x00}
+CFR_DATA = {0x00, 0x03, 0x02}
+CPOW0_DATA = {0x00, 0x00}
+LSRR_DATA = {0x00, 0x00}
+RDW_DATA = {0x00, 0x00, 0x00, 0x00}
+FDW_DATA = {0x00, 0x00, 0x00, 0x00}
 
-end )
+-- uint32 *
+SinFreq = {10000000, 10000000, 200000000, 40000}
+SinAmp = {9215, 9215, 9215, 9215}
+SinPhase = {0, 4095, 4095*3, 4095*2}
 
-sys.subscribe("WLAN_SCAN_DONE", function()
-	local result = wlan.scanResult()
-	_G.scan_result = {}
-	for k,v in pairs(result) do
-		log.info("scan",
-			(v["ssid"] and #v["ssid"] > 0)
-			and
-			v["ssid"] or "[隐藏SSID]", v["rssi"], (v["bssid"]:toHex()))
-		if v["ssid"] and #v["ssid"] > 0 then
-				table.insert(_G.scan_result, v["ssid"])
-		end
-	end
-	log.info("scan", "aplist", json.encode(_G.scan_result))
+-- IO port operation macro definition
+function BITBAND(addr, bitnum) 
+  return ((addr & 0xF0000000)+0x2000000+((addr &0xFFFFF)<<5)+(bitnum<<2)) 
 end
+
+function MEM_ADDR(addr)  
+  return  addr 
+end
+function BIT_ADDR(addr, bitnum)   
+  return MEM_ADDR(BITBAND(addr, bitnum)) 
+end
+
+GPIOD_ODR_ADDR = 0x40020C14
+GPIOD_IDR_ADDR = 0x40020C10
+
+-- TODO lua FFI is needed
+
+-- @description => DDS module: AD9959
+function init_DDS()
+  -- IMPL 
+  -- TODO rename GG => GPIO_INIT
+  FR1_DATA = {0xd3, 0x00, 0x00} -- uint8
+  GG = {}
+  GG.pin = 0x4fff -- TODO !  
+  local gpiod = gpio.setup(GG.pin, OUT, PULLUP
+  -- trigger-default: gpio.BOTH, 
 )
 
-sys.subscribe("IP_READY", function()
-	log.info("wlan", "conected", ">>>>>>>>>>>>>>")
-	sys.taskInit(function()
-		sys.wait(1000)
-		-- 以下是rtkv库的模拟实现, 这里就不强制引入rtkv了
-		local token = mcu.unique_id():toHex()
-		local device = wlan.getMac()
-		local params = "device=" .. device .. "&token=" .. token
-		params = params .. "&key=ip&value=" .. (socket.localIP())
-		local code = http.request("GET", "http://rtkv.air32.cn/api/rtkv/set?" .. params, {timeout=3000}).wait()
-		log.info("上报结果", code)
-end)
+  init_ddsio()
+  init_reset()
 
 end
-)
+
+function setup_DDS()
+  gpio.set(RST_DDS_Pin, HIGH)
+  sys.wait(100)   
+  gpio.set(RST_DDS, LOW)
 
 
 
+end
+
+function nwriteDDSreg(addr, bytes, datas)
+  gpio.set(CSB_DDS, LOW)
+end
+
+
+-- TODO: refactor the server function
+function server()
+  return tcpsrv.setup()
+end
+
+
+
+function display_screen() 
+  print("LVGL screen")
+end
+-- @description 先只做 wifi 
+function dds_main_pesudo_code()
+
+  display_screen()
+
+
+  if wlan and wlan.connect then
+    wifihelper.setup(true) 
+  elseif mobile then
+    log.info("mobile", "auto connect")
+  else
+    while 1 do
+      sys.wait(1000)
+      log.warn("Wifi BSP","the BSP may not be adated to the network layor")
+    end
+  end
+
+  -- wifi only 
+
+
+
+
+
+  init_DDS()
+
+
+
+
+end
+
+
+sys.taskInit(dds_main)
 sys.run()
+
+
+

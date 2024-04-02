@@ -1,21 +1,36 @@
 _G.sys = require("sys")
+
 ESP32APSSID = "PROV_EGG"
 ESP32APPWD = "12345678"
 
-TOAP_SSID = "PROV_eggs"
-TOAP_PWD = "liyuan11328"
 
 local wifi_helper = {}
 
 local scan_result = {}
 
-function wifi_helper.setup(mode, isdebug)
-  wifi_setup(mode, isdebug)
+SCREEN_PLACEHOLDER = require "screen0"
+
+function wifi_helper.fetch_ssid_info()
+  local ssid = SCREEN_PLACEHOLDER.get_ssid()
+  local pwd = SCREEN_PLACEHOLDER.get_pwd()
+  local info = {}
+  info.ssid = ssid
+  info.pwd = pwd
+  info.mode = "STATION"
+  return info
+end
+
+function wifi_helper.setup(isdebug)
+  local info = wifi_helper.fetch_ssid_info()
+  wifi_setup(info, isdebug)
 end
 
 
 -- default to be at MODE: STATION
-function wifi_setup(mode, debug)
+function wifi_setup(info, debug)
+  local mode = info.mode
+  local ssid =info.ssid
+  local pwd = info.pwd
   debug = debug or false
   sys.wait(100)
   wlan.hostname("DDS-esp32c3")
@@ -27,10 +42,12 @@ function wifi_setup(mode, debug)
     log.info("AP", ESP32APSSID .. wlan.getMac(), ESP32APPWD)
 
   elseif mode == wlan.STATION then
-    wlan.connect(TOAP_SSID,TOAP_PWD, 1)
+    wlan.connect(ssid,pwd, 1)
     if wlan.ready() then
+      SCREEN_PLACEHOLDER.display("IP: ")
       log.info("STATION", "is ready, IP: " .. wlan.getIP())
     end
+      SCREEN_PLACEHOLDER.display("IP: ")
     log.info("STATION", ret)
   end
 

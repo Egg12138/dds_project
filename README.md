@@ -81,4 +81,13 @@ ddsc repl
 
 * 跨线程的全局变量 `STATUS` (TODO)， 保证通信时的线程安全
 
+TODO Rust Aciton，状态机
+TODO luatos DEMO
+TODO luatos receiver (硬编码)
+TODO luatos parser
+
+* tokio
+* 
+
+
 ## hardware todos

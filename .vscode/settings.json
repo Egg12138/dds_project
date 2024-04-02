@@ -14,5 +14,6 @@
   "files.associations": {
     "*.c": "c",
     "ref.h": "c"
-  }
+  },
+  "C_Cpp.errorSquiggles": "enabled"
 }

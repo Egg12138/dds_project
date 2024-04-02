@@ -1,8 +1,13 @@
 debug = true
 
 [connection]
-ip = "127.0.0.1" # ipv4 of the MCU
+ip = "127.0.0.1" # ipv4 of the MCU, only used in wifi mode and iot mode
+pwd = "liyuan11328"
 mode = "wifi"
+retry = 5 # how many times it tries when Connection Errors occuring 
+retry_interval = 2 # secs
+
+
 # pwd = "liyuan11328" # if necassary
 
 [iot]

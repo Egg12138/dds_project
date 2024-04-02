@@ -1,7 +1,10 @@
+//! the config.rs checks the validation of input arguments
+
 #![allow(deprecated)]
 
 use crate::cli::CommunicationMethod;
 use crate::control;
+use crate::data;
 use crate::log_func;
 use colored::Colorize;
 use config::{Config, ConfigError, Environment, File};
@@ -9,9 +12,13 @@ use lazy_static::lazy_static;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::net::{AddrParseError, Ipv4Addr};
+#[allow(unused_imports)]
+use std::fmt::write;
+#[allow(unused_imports)]
+use std::future::Future;
+use std::net::Ipv4Addr;
 use std::path::Path;
-use std::str::FromStr;
+//use std::str::FromStr;
 use std::sync::{mpsc::channel, RwLock};
 use std::time::Duration;
 
@@ -45,7 +52,11 @@ pub(crate) struct MCU {
 #[derive(Debug, Deserialize)]
 struct Connection {
     ip: Ipv4Addr,
+    pwd: String,
     mode: CommunicationMethod,
+    retry: u32,
+    /// in secs
+    retry_interval: f32,
 }
 
 #[repr(C)]
@@ -56,36 +67,7 @@ struct IoT {
     private_key: String,
 }
 
-// impl FromStr for Connection {
-//     type Err = AddrParseError;
-//     #[inline]
-//     fn from_str(s: &str) -> Result<Self, Self::Err> {
-//         match Ipv4Addr::from_str(s) {
-//             Ok(ip) => Ok(Self { ip }),
-//             Err(e) => Err(e),
-//         }
-//     }
-// }
-
-// impl From<u32> for Connection {
-//     #[inline]
-//     fn from(value: u32) -> Self {
-//         Connection {
-//             ip: Ipv4Addr::from_bits(value),
-//         }
-//     }
-// }
-
-// impl From<[u8; 4]> for Connection {
-//     #[inline]
-//     fn from(value: [u8; 4]) -> Self {
-//         Connection {
-//             ip: Ipv4Addr::from(value),
-
-//         }
-//     }
-// }
-
+#[allow(unused)]
 impl MCU {
     pub(crate) fn new() -> Result<Self, ConfigError> {
         let s = Config::builder()
@@ -95,12 +77,14 @@ impl MCU {
             .add_source(Environment::with_prefix(ENV_PREFIX))
             .build()?;
         println!("[MCU::new] debug: {:?}", s.get_bool("debug"));
-        println!(
-            "[MCU::new] private key: {:?}",
-            s.get::<String>("connection.ip")
-        );
-        println!("[MCU::new] table: {:?}", s.get_table("iot"));
-        log_func!(red:"done");
+        // println!(
+        //     "[MCU::new] private key: {:?}",
+        //     s.get::<String>("connection.ip")
+        // );
+        log_func!("private key", s.get::<String>("connection.ip"));
+        log_func!("table: ", s.get_table("iot"));
+        // println!("[MCU::new] table: {:?}", s.get_table("iot"));
+        log_func!("done");
         s.try_deserialize()
     }
 
@@ -114,11 +98,55 @@ impl MCU {
         self.connection.mode
     }
 
+    #[deprecated]
     pub(crate) fn pub_key(&self) -> &String {
         &self.iot.public_key
     }
+
+    #[deprecated]
     pub(crate) fn privt_key(&self) -> &String {
         &self.iot.private_key
+    }
+
+    pub(crate) fn keypais(&self) -> (&String, &String) {
+        (&self.iot.public_key, &self.iot.private_key)
+    }
+
+    /// return : (retry_time, retry_int)
+    pub(crate) fn retry_settings(&self) -> (u32, f32) {
+        (self.connection.retry, self.connection.retry_interval)
+    }
+
+    pub(crate) fn pwd(&self) -> &String {
+        &self.connection.pwd
+    }
+
+    pub(crate) fn change_pwd(&mut self, newone: String) {
+        self.connection.pwd = newone;
+    }
+
+    pub(crate) fn reconnect(&self) {}
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum IndicationTypes {
+    SetInput,
+    PowerOff,
+    Scan,
+    Display,
+    /// report the status of MCU and DDS
+    Report,
+}
+
+impl std::fmt::Display for IndicationTypes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SetInput => write!(f, "setinput"),
+            Self::PowerOff => write!(f, "poweroff"),
+            Self::Scan => write!(f, "scan"),
+            Self::Display => write!(f, "display"),
+            Self::Report => write!(f, "report"),
+        }
     }
 }
 
@@ -127,10 +155,11 @@ impl MCU {
 #[repr(C)]
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Input {
+    pub indication: IndicationTypes,
     pub freq_hz: f64,
     pub vol_mv: f32,
     pub ph_oft: i8,
-    pub collect: bool,
+    // pub collect: bool,
 }
 
 impl Default for Input {
@@ -151,7 +180,7 @@ impl Default for Input {
             freq_hz: 0_f64,
             vol_mv: 0_f32,
             ph_oft: 0,
-            collect: false,
+            indication: IndicationTypes::SetInput,
         }
     }
 }
@@ -166,10 +195,10 @@ impl From<Config> for Input {
 impl Input {
     #[deprecated]
     fn _syslevel_path() -> &'static str {
-        #[cfg(target_os = "windows")]
+        #[cfg(target_family = "windows")]
         const SysPATH: &str = "%APPDATA%\\dds_controller\\cfg.toml";
 
-        #[cfg(target_os = "linux")]
+        #[cfg(target_family = "unix")]
         const SysPATH: &str = "~/.config/dds_controller//cfg.toml";
 
         SysPATH
@@ -190,7 +219,7 @@ impl Input {
         self.freq_hz = input.freq_hz;
         self.vol_mv = input.vol_mv;
         self.ph_oft = input.ph_oft;
-        self.collect = input.collect;
+        self.indication = input.indication;
 
         println!(
             "* Input:: 
@@ -198,7 +227,7 @@ impl Input {
             self
         );
         let encoded = serde_json::to_string(&self).unwrap_or_default();
-        control::send_msg(encoded);
+        data::send_msg(encoded);
     }
 
     // #[allow(unused)]
@@ -251,7 +280,7 @@ impl Input {
         true
     }
 
-    pub(crate) fn valid_input(&self, cfg: &Input) -> bool {
+    pub(crate) fn valid_input(&self) -> bool {
         self.freq_valid() && self.vol_valid() && self.ph_valid()
     }
 }
@@ -264,75 +293,80 @@ pub(crate) fn quick_input_watcher(script: String) {
     //         settings
     //     });
     // }
+    control::execute(script);
+    // TODO: asyn executing:
+    show();
+    data::wait4response_show();
+    watch();
+}
 
-    fn show() {
-        println!(
-            "* Settings:: \n\x1b[31m{:?}\x1b[0m",
-            CFG.read()
-                .unwrap()
-                .clone()
-                .try_deserialize::<HashMap<String, String>>()
-                .unwrap()
-        );
-    }
+pub(crate) fn show() {
+    println!(
+        "* Settings:: \n\x1b[31m{:?}\x1b[0m",
+        CFG.read()
+            .unwrap()
+            .clone()
+            .try_deserialize::<HashMap<String, String>>()
+            .unwrap()
+    );
+}
 
-    fn watch() {
-        let (tx, rx) = channel();
+fn watch() {
+    let (tx, rx) = channel();
 
-        //LEARN setting up a notify to watch data files and config files may be good
-        // Automatically select the best implementation for your platform.
-        // You can also access each implementation directly e.g. INotifyWatcher.
-        let mut watcher: RecommendedWatcher = Watcher::new(
-            tx,
-            notify::Config::default().with_poll_interval(Duration::from_secs(1)),
-        )
-        .unwrap();
+    //LEARN setting up a notify to watch data files and config files may be good
+    // Automatically select the best implementation for your platform.
+    // You can also access each implementation directly e.g. INotifyWatcher.
+    let mut watcher: RecommendedWatcher = Watcher::new(
+        tx,
+        notify::Config::default().with_poll_interval(Duration::from_secs(1)),
+    )
+    .unwrap();
 
-        // Add a path to be watched. All files and directories at that path and
-        // below will be monitored for changes.
-        assert!(watcher
-            .watch(Path::new(LOCAL_CFG), RecursiveMode::NonRecursive)
-            .is_ok());
+    // Add a path to be watched. All files and directories at that path and
+    // below will be monitored for changes.
+    assert!(watcher
+        .watch(Path::new(LOCAL_CFG), RecursiveMode::NonRecursive)
+        .is_ok());
 
-        // This is a simple loop, but you may want to use more complex logic here,
-        // for example to handle I/O.
-        loop {
-            match rx.recv() {
-                Ok(Ok(Event {
-                    kind: notify::event::EventKind::Modify(_),
-                    ..
-                })) => {
-                    // println!(
-                    // " * [{}] is modified; refreshing configuration ...",
-                    // LOCAL_CFG
-                    // );
+    // This is a simple loop, but you may want to use more complex logic here,
+    // for example to handle I/O.
+    loop {
+        match rx.recv() {
+            Ok(Ok(Event {
+                kind: notify::event::EventKind::Modify(_),
+                ..
+            })) => {
+                // println!(
+                // " * [{}] is modified; refreshing configuration ...",
+                // LOCAL_CFG
+                // );
 
-                    log_func!(" dds input is modified");
-                    // TODO remove unwraps.
-                    let input = CFG
-                        .write()
-                        .unwrap()
-                        .refresh()
-                        .unwrap()
-                        .clone()
-                        .try_deserialize::<Input>()
-                        .unwrap_or_default();
-                    control::send_msg(serde_json::to_string_pretty(&input).unwrap_or_default());
+                log_func!(" dds input is modified");
+                // TODO remove unwraps.
+                let input = CFG
+                    .write()
+                    .unwrap()
+                    .refresh()
+                    .unwrap()
+                    .clone()
+                    .try_deserialize::<Input>()
+                    .unwrap_or_default();
+                if input.valid_input() {
+                    data::send_msg(serde_json::to_string_pretty(&input).unwrap_or_default());
                     show();
+                } else {
+                    println!("{}", "invalid input setting!".on_red());
                 }
+            }
 
-                Err(e) => println!("watch error: {:?}", e),
+            Err(e) => println!("watch error: {:?}", e),
 
-                _ => {
-                    // Ignore event
-                }
+            _ => {
+                // Ignore event
             }
         }
     }
-
-    control::execute(script);
-    show();
-    watch();
 }
 
 /// very, very, **unsafe**! only support one layor TOML parse
