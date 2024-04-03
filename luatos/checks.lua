@@ -24,10 +24,20 @@ function checker.mem_check()
 end
 
 
-function checker.cpu_check()
+-- [[
+--  @description: rename from cpu_check to machine check
+-- ]]
+function checker.machine_check()
   -- TODO
+  checker.rtc_checks()
+  checker.mem_check()
+  checker.wifi_checks()
+  checker.bluetooth_checks()
+
 end
 
+function checker.bluetooth_checks()
+end
 
 function checker.bootloader_check()
   -- LEARN: bootloader infomation parsing

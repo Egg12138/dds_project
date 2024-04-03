@@ -13,14 +13,11 @@ end
 sys.taskInit(function ()
 	--    INIT
 
-	checker.wifi_checks()
-
-	checker.rtc_checks()
+	checker.machin_check()
 
 	checker.http_checks()
 	-- meminfo
 
-	checker.wifi_checks()
 	-- checker.screen_checks()
 
 

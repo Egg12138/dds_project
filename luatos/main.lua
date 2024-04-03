@@ -9,6 +9,8 @@ spi = require "dds_spi"
 
 local ffi = require "ffi"
 
+log.setLevel(1)
+
 ---@diagnostic disable-next-line: different-requires
 wifihelper = require "wifi-utils"
 
