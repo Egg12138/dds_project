@@ -17,9 +17,22 @@ use crate::ddserror::DDSError;
 use crate::log_func;
 use crate::{config, control};
 use colored::Colorize;
-use serde::{self};
+use serde::{self, Deserialize, Serialize};
 use serde_json::json;
 use std::sync;
+
+#[allow(unused)]
+#[derive(Debug, Deserialize, Serialize)]
+struct MQTT_north {
+    paras: MQTT_paras,
+    command_name: String,
+    request_id: String,
+}
+
+#[allow(unused)]
+#[derive(Debug, Deserialize, Serialize)]
+struct MQTT_paras {}
+
 /// wait for the response from ESP32
 async fn mcu_response() -> bool {
     //TODO: using Notify.rs

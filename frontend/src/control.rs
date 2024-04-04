@@ -4,7 +4,6 @@
 
 use crate::data::send_msg;
 use colored::Colorize;
-use config::ConfigError;
 use core::panic;
 use std::sync::Once;
 use std::{env, sync::Arc};
@@ -15,7 +14,6 @@ use crate::{
     ddserror::DDSError,
 };
 
-use exitcode;
 use std::time::Duration;
 
 use std::{process::exit, thread};
@@ -360,7 +358,7 @@ pub(crate) fn monitor() {
 /// bind esp32 using esp32's IP?
 /// 1. read and load the config
 /// as for trying to connect... this is the mission of another function
-pub(crate) fn try_parse_mcu() -> Result<MCU, ConfigError> {
+pub(crate) fn try_parse_mcu() -> Result<MCU, DDSError> {
     match MCU::new() {
         Ok(mcu) => {
             if mcu.debug() {
@@ -373,6 +371,6 @@ pub(crate) fn try_parse_mcu() -> Result<MCU, ConfigError> {
             }
             Ok(mcu)
         }
-        Err(e) => Err(e),
+        Err(e) => Err(e.into()),
     }
 }

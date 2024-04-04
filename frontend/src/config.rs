@@ -5,6 +5,7 @@
 use crate::cli::CommunicationMethod;
 use crate::control;
 use crate::data;
+use crate::ddserror::DDSError;
 use crate::log_func;
 use colored::Colorize;
 use config::{Config, ConfigError, Environment, File};
@@ -69,7 +70,7 @@ struct IoT {
 
 #[allow(unused)]
 impl MCU {
-    pub(crate) fn new() -> Result<Self, ConfigError> {
+    pub(crate) fn new() -> Result<Self, DDSError> {
         let s = Config::builder()
             .add_source(File::with_name(LOCAL_MCU_CFG))
             .add_source(File::with_name(DEFAULT_MCU_CFG).required(false))
@@ -85,7 +86,7 @@ impl MCU {
         log_func!("table: ", s.get_table("iot"));
         // println!("[MCU::new] table: {:?}", s.get_table("iot"));
         log_func!("done");
-        s.try_deserialize()
+        s.try_deserialize().map_err(DDSError::ConfigError)
     }
 
     pub(crate) fn debug(&self) -> bool {
