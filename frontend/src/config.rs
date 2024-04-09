@@ -5,10 +5,12 @@
 use crate::cli::CommunicationMethod;
 use crate::control;
 use crate::data;
+use crate::data::CMDNAMES;
 use crate::ddserror::DDSError;
 use crate::log_func;
 use colored::Colorize;
 use config::{Config, ConfigError, Environment, File};
+use core::panic;
 use lazy_static::lazy_static;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
@@ -54,7 +56,7 @@ pub(crate) struct MCU {
 struct Connection {
     ip: Ipv4Addr,
     pwd: String,
-    mode: CommunicationMethod,
+    // mode: CommunicationMethod,
     retry: u32,
     /// in secs
     retry_interval: f32,
@@ -95,9 +97,9 @@ impl MCU {
     pub(crate) fn ip(&self) -> Ipv4Addr {
         self.connection.ip
     }
-    pub(crate) fn mode(&self) -> CommunicationMethod {
-        self.connection.mode
-    }
+    // pub(crate) fn mode(&self) -> CommunicationMethod {
+    // self.connection.mode
+    // }
 
     #[deprecated]
     pub(crate) fn pub_key(&self) -> &String {
@@ -130,37 +132,95 @@ impl MCU {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum IndicationTypes {
+pub enum CommandTypes {
     SetInput,
     PowerOff,
     Scan,
-    Display,
-    /// report the status of MCU and DDS
-    Report,
+    Report, // check
+    Reset,
+    Update,
+    DirectSPI,
+    ListMode,
+    ListLength(u32),
+    ListReset,
+    Sync,
+    Init,
+    // MemStorage(Vec<String>),
 }
 
-impl std::fmt::Display for IndicationTypes {
+impl std::fmt::Display for CommandTypes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::SetInput => write!(f, "setinput"),
             Self::PowerOff => write!(f, "poweroff"),
             Self::Scan => write!(f, "scan"),
-            Self::Display => write!(f, "display"),
             Self::Report => write!(f, "report"),
+            Self::Reset => write!(f, "reset"),
+            Self::DirectSPI => write!(f, "direct SPI"),
+            Self::ListLength(len) => write!(f, "set list length to {}", *len),
+            Self::ListReset => write!(f, "reset list"),
+            Self::ListMode => write!(f, "list mode"),
+            Self::Sync => write!(f, "synchronized"),
+            // Self::MemStorage(spicmds) => write!(f, "stored spi cmds {:?}", *spicmds),
+            _ => panic!("Invalid command type"),
         }
     }
 }
 
+impl From<&str> for CommandTypes {
+    fn from(value: &str) -> Self {
+        match value {
+            "setinput" => CommandTypes::SetInput,
+            "poweroff" => CommandTypes::PowerOff,
+            "scan" => CommandTypes::Scan,
+            "report" => CommandTypes::Report,
+            "reset" => CommandTypes::Reset,
+            "direct_spi" => CommandTypes::DirectSPI,
+            "list_mode" => CommandTypes::ListMode,
+            "list_reset" => CommandTypes::ListReset,
+            "sync" => CommandTypes::Sync,
+            with_arg => {
+                let split: Vec<&str> = with_arg.split(',').collect();
+                match split[0] {
+                    "list_length" => CommandTypes::ListLength(split[1].parse::<u32>().unwrap()),
+                    _ => panic!("Unknown command type"),
+                }
+            }
+            _ => panic!("Invalid command type"),
+        }
+    }
+}
 /// a standard collection of data to be sent.
 /// but `quick_Watcher` is a faster way to sending messages.
 #[repr(C)]
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct Input {
-    pub indication: IndicationTypes,
-    pub freq_hz: f64,
-    pub vol_mv: f32,
-    pub ph_oft: i8,
+pub(crate) struct Input {
+    pub command_name: CommandTypes,
+    pub paras: Paras,
     // pub collect: bool,
+}
+
+#[repr(C)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub(crate) struct Paras {
+    freq_hz: f64,
+    vol_mv: f32,
+    ph_oft: i8,
+}
+
+impl Paras {
+    pub(crate) fn new(freq_hz: f64, vol_mv: f32, ph_oft: i8) -> Self {
+        Paras {
+            freq_hz,
+            vol_mv,
+            ph_oft,
+        }
+    }
+    pub(self) fn set(&mut self, f: f64, v: f32, p: i8) {
+        self.freq_hz = f;
+        self.vol_mv = v;
+        self.ph_oft = p;
+    }
 }
 
 impl Default for Input {
@@ -175,20 +235,31 @@ impl Default for Input {
                 .expect("Deserialization failed!");
         }
 
-        eprintln!("builtin inputs are used");
+        eprintln!(
+            "{}",
+            "cfg.toml is not configured correctly\nbuiltin inputs are used"
+                .on_bright_red()
+                .bold()
+        );
 
         Input {
-            freq_hz: 0_f64,
-            vol_mv: 0_f32,
-            ph_oft: 0,
-            indication: IndicationTypes::SetInput,
+            command_name: CommandTypes::SetInput,
+            paras: Paras {
+                freq_hz: 0_f64,
+                vol_mv: 0_f32,
+                ph_oft: 0,
+            },
         }
     }
 }
 
 impl From<Config> for Input {
     fn from(value: Config) -> Self {
-        value.try_deserialize().unwrap_or_default()
+        value.try_deserialize().unwrap_or_else(|e| {
+            eprintln!("{e}");
+            log_func!(on_magenta:"config failed to deserialize, use the default settings");
+            Self::default()
+        })
     }
 }
 
@@ -205,7 +276,7 @@ impl Input {
         SysPATH
     }
 
-    pub(crate) fn new(path: &str) -> Self {
+    pub(crate) fn from_config(path: &str) -> Self {
         if let Ok(builder) = Config::builder().add_source(File::with_name(path)).build() {
             builder.try_deserialize().unwrap_or_default()
         } else {
@@ -214,13 +285,15 @@ impl Input {
         }
     }
 
+    fn set_input(&mut self, f: f64, v: f32, p: i8) {
+        self.paras.set(f, v, p);
+    }
+
     fn handle(&mut self) {
         let cfgmap = CFG.read().unwrap().clone();
         let input = Input::from(cfgmap);
-        self.freq_hz = input.freq_hz;
-        self.vol_mv = input.vol_mv;
-        self.ph_oft = input.ph_oft;
-        self.indication = input.indication;
+        self.set_input(input.freq(), input.vol(), input.phase());
+        self.command_name = input.command_name;
 
         println!(
             "* Input:: 
@@ -231,6 +304,18 @@ impl Input {
         data::send_msg(encoded);
     }
 
+    pub fn freq(&self) -> f64 {
+        self.paras.freq_hz
+    }
+    pub fn vol(&self) -> f32 {
+        self.paras.vol_mv
+    }
+    pub fn phase(&self) -> i8 {
+        self.paras.ph_oft
+    }
+    pub fn command_name(&self) -> &CommandTypes {
+        &self.command_name
+    }
     // #[allow(unused)]
     pub fn watch_dds_input(&mut self) {
         let (tx, rx) = channel();
@@ -307,8 +392,8 @@ pub(crate) fn show() {
         CFG.read()
             .unwrap()
             .clone()
-            .try_deserialize::<HashMap<String, String>>()
-            .unwrap()
+            .try_deserialize::<Input>()
+            .unwrap_or_default()
     );
 }
 

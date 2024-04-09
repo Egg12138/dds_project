@@ -2,11 +2,13 @@
 //! ,generating data packet, and communication to MCU
 //! including the majority of the system logic.
 
-use crate::data::send_msg;
+use crate::config::{CommandTypes, Input};
+use crate::data::{quick_cmd2data, quick_send, send_datapkg, send_msg};
 use colored::Colorize;
 use core::panic;
 use std::sync::Once;
 use std::{env, sync::Arc};
+
 // use std::error::Error;
 use crate::{
     cli::{CommunicationMethod, RunnerArgs},
@@ -44,11 +46,10 @@ macro_rules! log_func {
             print!("{}", ($msg).purple());
         )*
         println!();
-
     };
 
     ($($msg:expr),+) => {
-         print!("[{}] ", $crate::func!().green().italic());
+        print!("[{}] ", $crate::func!().green().italic());
         $(
             print!("{:?}", ($msg));
         )*
@@ -95,6 +96,9 @@ const VARS: [&str; 4] = [
     "DDSC_HAS_CONNECTED",
 ];
 
+unsafe fn get_mode() -> CommunicationMethod {
+    MODE.clone()
+}
 /// **Assumption**: the DDSC_{}s are unique
 unsafe fn once_setup() {
     ONCE_SETUP.call_once(|| {
@@ -213,6 +217,7 @@ pub(crate) fn repl() {
 
 pub(crate) fn init_system() {
     // unsafe {
+    let climode = unsafe { get_mode() };
     match try_parse_mcu() {
         Err(e) => {
             //TODO if failed to parse.
@@ -226,7 +231,7 @@ pub(crate) fn init_system() {
         }
 
         Ok(mcu) => {
-            connect2esp32(&mcu);
+            connect2esp32(&mcu, &climode);
 
             unsafe {
                 once_setup();
@@ -239,18 +244,33 @@ pub(crate) fn init_system() {
     }
 }
 
-fn connect2esp32(mcu: &MCU) {
-    let (retry_times, retry_int) = mcu.retry_settings();
-    let mut loops = 0;
-    while let Err(e) = try_connect(retry_times, retry_int) {
-        if loops >= retry_times {
-            log_func!(on_red:"Closed.");
-            exit(exitcode::UNAVAILABLE);
+fn connect2esp32(mcu: &MCU, climode: &CommunicationMethod) {
+    match climode {
+        CommunicationMethod::Ble => {
+            log_func!(on_bright_magenta:"\tConnecting to ESP32 via BLE");
         }
-        eprintln!("failed to connect to {}", mcu.ip());
-        eprintln!("reconnect in {} seconds", retry_int);
-        thread::sleep(Duration::from_secs_f32(retry_int));
-        loops += 1;
+
+        CommunicationMethod::Iot => {
+            log_func!(on_bright_magenta:"\tConnecting to ESP32 via IoT platform");
+        }
+        CommunicationMethod::Wifi => {
+            log_func!(on_bright_magenta:"\tConnectingto ESP32 via Wifi");
+            let (retry_times, retry_int) = mcu.retry_settings();
+            let mut loops = 0;
+            while let Err(e) = try_connect(retry_times, retry_int) {
+                if loops >= retry_times {
+                    log_func!(on_red:"Closed.");
+                    exit(exitcode::UNAVAILABLE);
+                }
+                eprintln!("failed to connect to {}", mcu.ip());
+                eprintln!("reconnect in {} seconds", retry_int);
+                thread::sleep(Duration::from_secs_f32(retry_int));
+                loops += 1;
+            }
+        }
+        CommunicationMethod::Wired => {
+            log_func!(on_bright_magenta:"\t Established GPIO connection to ESP32");
+        }
     }
 
     log_func!();
@@ -293,7 +313,10 @@ fn checks() {
 }
 
 fn check_esp32() {
-    send_msg("check esp32".to_string());
+    send_datapkg(quick_cmd2data(&CommandTypes::Report).unwrap());
+    let msg = "command_name: \"report\", paras: {}, request_id: {} ";
+    send_msg(msg.to_string());
+    quick_send("report");
     log_func!(on_magenta);
 }
 
@@ -301,11 +324,11 @@ fn check_esp32() {
 /// NOTICE: 我们将 wait 放在frontend 处理，只是为了方便点。
 /// 所以实际上poweroff wait 是: wait 之后再传数据
 pub(crate) fn poweroff(wait: Option<u64>) {
-    let msg_json = "{}".to_owned();
     if let Some(ms) = wait {
         thread::sleep(Duration::from_millis(ms));
     }
-    send_msg(msg_json);
+    // send_msg(msg_json);
+    quick_send("poweroff").expect("failed to poweroff! ");
 
     // TODO:
     unsafe {
@@ -328,7 +351,6 @@ pub(super) fn run(args: RunnerArgs) {
 
 pub(crate) fn execute(script: String) {
     if let Ok(mcucfg) = MCU::new() {
-        let mode: CommunicationMethod = mcucfg.mode();
         if !has_setup() {
             log_func!(red:"HASN'T init!");
             init_system();
@@ -349,8 +371,6 @@ fn raw_execute(script: String) {
 
 pub(crate) fn monitor() {
     // TODO : open serial port
-    // NOTICE: 不是波形显示器！只是串口监视器&参数显示器
-    // NOTICE: 不推荐用这个,用外置的串口监视器更好点,无线连接就只参数显示器
     todo!()
 }
 
@@ -371,6 +391,8 @@ pub(crate) fn try_parse_mcu() -> Result<MCU, DDSError> {
             }
             Ok(mcu)
         }
-        Err(e) => Err(e.into()),
+        Err(e) => Err(e),
     }
 }
+
+// --------------------

@@ -15,11 +15,8 @@ pub(crate) const DEFAULT_NAME: &str = "MagicBook Windows";
 pub(crate) const DEFAULT_NAME: &str = "MagicBook Unix";
 
 const MODE_HELP: &str = " 
-    how Host to ESP32: iot | wired | ble | wife(default)
-    it's hightly recommanded to directly use the screen to controll DDS 
-    if the screen is touchable.
-    Only if you'd like to collect data for advanced operations or the screen 
-    is not touchable, use the front end.
+    how Host to ESP32: iot | wired | ble | wifi(default)
+    [WIFI and IoT] are supported currently.
     IoT mode is better then Wifi/ble mode, excepting you are considering about 
     somehow `privacy`?
     ";
@@ -183,7 +180,7 @@ fn baudrate_range(brstr: &str) -> Result<usize, String> {
 }
 
 /// only IoT options is using the remote IoT
-#[derive(ValueEnum, Clone, Copy, Debug, Deserialize)]
+#[derive(ValueEnum, Clone, Copy, Debug, Deserialize, PartialEq)]
 pub(crate) enum CommunicationMethod {
     /// must via WLAN
     Iot,

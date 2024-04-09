@@ -19,6 +19,7 @@ mod config;
 mod control;
 mod data;
 mod ddserror;
+mod register_control;
 
 use cli::Cli;
 

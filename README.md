@@ -79,15 +79,29 @@ ddsc repl
 ```
 ##### notes
 
-* 跨线程的全局变量 `STATUS` (TODO)， 保证通信时的线程安全
+luatos DDS-DEMO (1h) 
+尝试用string(不行就改用zbuff)
+- [x]  -> luatos refactor (0.5h)
+    -> LEARN ad9959 manual
+      -> LEARN ad9959_python, 看看要不要换Arduino
+        -> Frontend transfer API refactor
+      LEARN 仿照python用lua来实现
 
-TODO Rust Aciton，状态机
-TODO luatos DEMO
-TODO luatos receiver (硬编码)
-TODO luatos parser
+TODO Rust Aciton，socket
+LEARN luatos LVGL learning basic: (4h)
+* install SquareLine Stuidio
+* install simulator (SDL2 + VS?)
 
 * tokio
-* 
 
+
+
+
+
+### communcation
+
+via SPI protocol
 
 ## hardware todos
+
+

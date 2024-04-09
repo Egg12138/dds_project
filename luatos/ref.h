@@ -2,6 +2,7 @@
 #define __AD9959_H 
 
 #include <stdint.h>
+#include <lualib.h>
 
 #define CSR_ADD   0x00   //CSR  Channel Select Register(通道选择寄存器)                1 Bytes
 #define FR1_ADD   0x01   //FR1  Function Register 1(功能寄存器1)                       3 Bytes
@@ -44,7 +45,7 @@ void Write_Amplitude(uint8_t Channel, uint16_t Ampli);
 void Write_Phase(uint8_t Channel,uint16_t Phase);
 
 //IO port operation macro definition
-#define BITBAND(addr, bitnum) ((addr & 0xF0000000)+0x2000000+((addr &0xFFFFF)<<5)+(bitnum<<2)) 
+#define BITBAND(addr, bitnum) ((addr & 0xF0000000)+0x2000000+((addr & 0xFFFFF)<<5)+(bitnum<<2)) 
 #define MEM_ADDR(addr)  *((volatile unsigned long  *)(addr)) 
 #define BIT_ADDR(addr, bitnum)   MEM_ADDR(BITBAND(addr, bitnum)) 
 

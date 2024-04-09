@@ -24,6 +24,8 @@ pub enum DDSError {
     ConnectionLost,
     Forbidden,
     NoTarget,
+    IllegalArgument,
+    ConvertionError,
     #[doc(hidden)]
     #[cfg(feature = "failpoints")]
     FailPoint,

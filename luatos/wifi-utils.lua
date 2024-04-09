@@ -10,6 +10,9 @@ local scan_result = {}
 
 SCREEN_PLACEHOLDER = require "screen0"
 
+
+
+
 function wifi_helper.fetch_ssid_info()
   local ssid = SCREEN_PLACEHOLDER.get_ssid()
   local pwd = SCREEN_PLACEHOLDER.get_pwd()

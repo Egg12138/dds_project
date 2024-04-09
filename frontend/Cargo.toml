@@ -13,3 +13,10 @@ lazy_static = "^1.4.0"
 notify = "6.1.0"
 colored = "2.1.0"
 exitcode = "*"
+# delay_timer
+
+
+[features]
+default = []
+debug = ["costy_debug"]
+costy_debug = []

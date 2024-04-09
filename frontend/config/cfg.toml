@@ -1,5 +1,13 @@
+
+# cfg.toml enables you to easily set command to MCU:
+
+# 1. command_name = "setinput", [paras] field is need
+# 2. command_name = "report", "poweroff", "reset" ...
+# 3. NOTICE: if command_name = "ramp", you should use `ddsc scan <args>`, instead of cfg.toml
+
 hostname = "MagicBook Windows WSL"
-freq_hz = 30000.111111111111
+command_name = { "ListLength" = 3 }
+[paras]
+freq_hz = 3.1
 vol_mv = 333.14
 ph_oft = 120
-indication = "setinput"
