@@ -25,18 +25,20 @@ use std::path::Path;
 use std::sync::{mpsc::channel, RwLock};
 use std::time::Duration;
 
-const CFG_WATCH_INT: u64 = 2; // in seconds
+pub const CFG_WATCH_INT: u64 = 2; // in seconds
 /// the `dds input` local configuration TOML file in the {workspace},
-const LOCAL_CFG: &str = "./config/cfg.toml";
+pub const LOCAL_CFG_PATH: &str = "./config/cfg.toml";
 /// mcu settings
-const LOCAL_MCU_CFG: &str = "./config/mcucfg.toml";
-const DEFAULT_MCU_CFG: &str = "/.config/default_mcgcfg.toml";
-const ENV_PREFIX: &str = "dds";
+pub const LOCAL_MCU_CFG_PATH: &str = "./config/mcucfg.toml";
+pub const DEFAULT_MCU_CFG_PATH: &str = "/.config/default_mcgcfg.toml";
+pub const ENV_PREFIX: &str = "dds";
 
 lazy_static! {
     static ref CFG: RwLock<Config> = RwLock::new({
         let mut configuration = Config::default();
-        configuration.merge(File::with_name(LOCAL_CFG)).unwrap();
+        configuration
+            .merge(File::with_name(LOCAL_CFG_PATH))
+            .unwrap();
         configuration
     });
 }
@@ -74,8 +76,8 @@ struct IoT {
 impl MCU {
     pub(crate) fn new() -> Result<Self, DDSError> {
         let s = Config::builder()
-            .add_source(File::with_name(LOCAL_MCU_CFG))
-            .add_source(File::with_name(DEFAULT_MCU_CFG).required(false))
+            .add_source(File::with_name(LOCAL_MCU_CFG_PATH))
+            .add_source(File::with_name(DEFAULT_MCU_CFG_PATH).required(false))
             // add in cfgs from the environment (with a prefix of DDS)
             .add_source(Environment::with_prefix(ENV_PREFIX))
             .build()?;
@@ -131,7 +133,7 @@ impl MCU {
     pub(crate) fn reconnect(&self) {}
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum CommandTypes {
     SetInput,
     PowerOff,
@@ -201,22 +203,22 @@ pub(crate) struct Input {
 }
 
 #[repr(C)]
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub(crate) struct Paras {
     freq_hz: f64,
     vol_mv: f32,
-    ph_oft: i8,
+    ph_oft: u8,
 }
 
 impl Paras {
-    pub(crate) fn new(freq_hz: f64, vol_mv: f32, ph_oft: i8) -> Self {
+    pub(crate) fn new(freq_hz: f64, vol_mv: f32, ph_oft: u8) -> Self {
         Paras {
             freq_hz,
             vol_mv,
             ph_oft,
         }
     }
-    pub(self) fn set(&mut self, f: f64, v: f32, p: i8) {
+    pub(self) fn set(&mut self, f: f64, v: f32, p: u8) {
         self.freq_hz = f;
         self.vol_mv = v;
         self.ph_oft = p;
@@ -236,8 +238,8 @@ impl Default for Input {
         }
 
         eprintln!(
-            "{}",
-            "cfg.toml is not configured correctly\nbuiltin inputs are used"
+            ":{}",
+            "cfg.toml is not configured correctly\nbuiltin inputs are used\n"
                 .on_bright_red()
                 .bold()
         );
@@ -253,6 +255,18 @@ impl Default for Input {
     }
 }
 
+impl From<(f64, f32, u8)> for Input {
+    fn from(value: (f64, f32, u8)) -> Self {
+        Input {
+            command_name: CommandTypes::SetInput,
+            paras: Paras {
+                freq_hz: value.0,
+                vol_mv: value.1,
+                ph_oft: value.2,
+            },
+        }
+    }
+}
 impl From<Config> for Input {
     fn from(value: Config) -> Self {
         value.try_deserialize().unwrap_or_else(|e| {
@@ -285,7 +299,7 @@ impl Input {
         }
     }
 
-    fn set_input(&mut self, f: f64, v: f32, p: i8) {
+    pub(crate) fn set_input(&mut self, f: f64, v: f32, p: u8) {
         self.paras.set(f, v, p);
     }
 
@@ -310,7 +324,7 @@ impl Input {
     pub fn vol(&self) -> f32 {
         self.paras.vol_mv
     }
-    pub fn phase(&self) -> i8 {
+    pub fn phase(&self) -> u8 {
         self.paras.ph_oft
     }
     pub fn command_name(&self) -> &CommandTypes {
@@ -326,7 +340,7 @@ impl Input {
         .unwrap();
 
         assert!(watcher
-            .watch(Path::new(LOCAL_CFG), RecursiveMode::NonRecursive,)
+            .watch(Path::new(LOCAL_CFG_PATH), RecursiveMode::NonRecursive,)
             .is_ok());
         // TODO 1. loop, in another tty
         // TODO 2. the real time watch is opened when user enable
@@ -412,7 +426,7 @@ fn watch() {
     // Add a path to be watched. All files and directories at that path and
     // below will be monitored for changes.
     assert!(watcher
-        .watch(Path::new(LOCAL_CFG), RecursiveMode::NonRecursive)
+        .watch(Path::new(LOCAL_CFG_PATH), RecursiveMode::NonRecursive)
         .is_ok());
 
     // This is a simple loop, but you may want to use more complex logic here,
@@ -459,18 +473,11 @@ fn watch() {
 #[test]
 pub fn write_to_cfg() {
     let builder = Config::builder()
-        .add_source(File::with_name("cfg.toml"))
+        .add_source(File::with_name(LOCAL_CFG_PATH))
         .build();
-    if let Ok(settings) = builder {
-        println!(
-            "{:#?}",
-            settings
-                .try_deserialize::<HashMap<String, String>>()
-                .unwrap() // .unwrap_or(HashMap::default())
-        );
-    } else {
-        panic!("Failed to build cfg.toml!");
-    }
+    assert!(builder.is_ok());
+    let settings = builder.unwrap();
+    assert!(settings.try_deserialize::<Input>().is_ok());
 }
 
 #[test]
@@ -482,12 +489,7 @@ fn config_demo() {
         .build();
 
     if let Ok(settings) = builder {
-        println!(
-            "{:?}",
-            settings
-                .try_deserialize::<HashMap<String, String>>()
-                .unwrap()
-        );
+        assert!(settings.try_deserialize::<Input>().is_ok());
     }
 }
 

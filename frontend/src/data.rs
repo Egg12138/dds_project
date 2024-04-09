@@ -19,9 +19,10 @@ use crate::cli::{CommunicationMethod, DataArgs};
 use crate::config::{CommandTypes, Input, Paras};
 use crate::control::{has_connected, poweroff};
 use crate::ddserror::{self, DDSError};
-use crate::log_func;
-use crate::{config, control};
+use crate::{config as cfg, control};
+use crate::{data, log_func};
 use colored::Colorize;
+use config::Config;
 use serde::{self, Deserialize, Serialize};
 use serde_json::json;
 use std::fmt::Display;
@@ -44,11 +45,40 @@ pub const CMDNAMES: [&str; 12] = [
 ];
 
 #[allow(unused)]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct DataPacket {
-    command_name: CommandTypes,
-    paras: Option<Paras>,
-    request_id: String,
+    pub command_name: CommandTypes,
+    pub paras: Option<Paras>,
+    /// default: "0", from_input: "1", from other types: "2", from MQTT: complicated
+    pub request_id: String,
+}
+
+impl Default for DataPacket {
+    /// read from cfg.toml, or else return the default inputs.
+    /// request id is 0 when default
+    fn default() -> Self {
+        if let Ok(c) = Config::builder()
+            .add_source(config::File::with_name("cfg.toml"))
+            .build()
+        {
+            return c
+                .try_deserialize::<DataPacket>()
+                .expect("Deserialization failed!");
+        }
+
+        eprintln!(
+            ":{}",
+            "cfg.toml is not configured correctly\nbuiltin inputs are used\n"
+                .on_bright_red()
+                .bold()
+        );
+
+        DataPacket {
+            command_name: CommandTypes::SetInput,
+            paras: Some(Paras::new(0f64, 0f32, 0)),
+            request_id: "0".to_string(),
+        }
+    }
 }
 
 impl Display for DataPacket {
@@ -86,8 +116,9 @@ impl TryFrom<&str> for DataPacket {
     }
 }
 
-impl From<config::Input> for DataPacket {
-    fn from(value: config::Input) -> Self {
+impl From<cfg::Input> for DataPacket {
+    /// from , request_id = 1
+    fn from(value: cfg::Input) -> Self {
         let command_name = value.command_name();
         let freq_hz = value.freq();
         let vol_mv = value.vol();
@@ -111,17 +142,17 @@ async fn mcu_response() -> bool {
 async fn wait4response_and() {
     // pseudo code:
     if mcu_response().await {
-        config::show()
+        cfg::show()
     }
 }
 
 pub(crate) async fn wait4response_show() {
     if mcu_response().await {
-        config::show()
+        cfg::show()
     }
 }
 
-unsafe fn try_send(encoded: String) -> Result<(), DDSError> {
+pub unsafe fn try_send(encoded: String) -> Result<(), DDSError> {
     log_func!(purple:"trying to send...");
     println!("\t{}", encoded);
     unsafe {
@@ -168,50 +199,135 @@ pub(crate) fn send_msg(msg: String) {
     log_func!(cyan: " sent.");
 }
 
-pub(crate) fn send_datapkg(pkg: DataPacket) {
+pub(crate) fn send_datapkg(pkg: DataPacket) -> Result<(), DDSError> {
     log_func!(cyan: "receiving DataPacket struct...");
     if let Ok(encoded) = serde_json::to_string_pretty(&pkg) {
         println!("\tdatapacket {pkg} => {:?}, ", encoded);
         unsafe {
             match try_send(encoded) {
-                Ok(_) => println!("\tbytes Sent!"),
-                Err(e) => eprintln!("\tsend error.{:?}", e),
+                Ok(_) => {
+                    log_func!("\tbytes Sent!");
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("\tsend error.{:?}", e);
+                    Err(e)
+                }
             }
         }
     } else {
-        panic!("Data packet cannot be serialized!!")
+        log_func!(on_red:"failed to encode datapacket to string");
+        Err(DDSError::ConvertionError)
     }
-
-    log_func!(cyan: " sent.");
 }
 
-pub(super) fn quick_cmd2data(cmd: &CommandTypes) -> Result<DataPacket, &str> {
-    match *cmd {
-        CommandTypes::PowerOff => Ok(DataPacket {
-            command_name: CommandTypes::PowerOff,
-            paras: None,
-            request_id: "2".to_string(),
-        }),
-        CommandTypes::Report => Ok(DataPacket {
-            command_name: CommandTypes::Report,
-            paras: None,
-            request_id: "2".to_string(),
-        }),
-        CommandTypes::Scan => Ok(DataPacket {
-            command_name: CommandTypes::Scan,
-            paras: None,
-            request_id: "2".to_string(),
-        }),
+pub(crate) fn send_cmd(cmd: CommandTypes) -> Result<(), DDSError> {
+    log_func!(cyan: "receiving CommandTypes");
+    // suitable for future `SetInput(Paras)`
+    let datapkg = quick_cmd2data(cmd);
+    send_datapkg(datapkg)
+}
 
-        _ => {
-            log_func!(on_red:"does not support with-paras-commands setinput/ramp .");
-            Err("error")
+macro_rules! match_cmd {
+    ($pattern:ident) => {
+        Ok(DataPacket {
+            command_name: CommandTypes::$pattern,
+            paras: None,
+            request_id: "2".to_string(),
+        })
+    };
+}
+
+macro_rules! match_allcmds {
+    ($cmd:expr => $($pattern:ident,)+ ) => {
+        match *$cmd {
+            $(
+                CommandTypes::$pattern => match_cmd!($pattern),
+            )+
+            _ => {
+            log_func!(on_red:"doest not support with-paras-commands (fix in next edition)");
+            Err(DDSError::IllegalArgument)  }
+        }
+    };
+
+}
+
+pub(crate) fn quick_cmd2data(cmd: CommandTypes) -> DataPacket {
+    match cmd {
+        // future: CommandTypes::SetInput(paras)
+        CommandTypes::ListLength(ll) => DataPacket {
+            command_name: CommandTypes::ListLength(ll),
+            paras: None, // TODO
+            request_id: "2".to_string(),
+        },
+        cmdtypes => DataPacket {
+            command_name: cmdtypes,
+            paras: None,
+            request_id: "2".to_string(),
+        },
+    }
+}
+
+#[deprecated(since = "0.1.4", note = "use macro-based version instead")]
+pub(crate) fn _quick_cmd2data_without_paras(cmd: &CommandTypes) -> Result<DataPacket, DDSError> {
+    /// an easy way to get DataPacket from the given CommandTypes
+    match *cmd {
+        CommandTypes::PowerOff => match_cmd!(PowerOff),
+        CommandTypes::Report => match_cmd!(Report),
+        CommandTypes::Scan => match_cmd!(Scan),
+        CommandTypes::Update => match_cmd!(Update),
+        CommandTypes::DirectSPI => match_cmd!(DirectSPI),
+        CommandTypes::Init => match_cmd!(Init),
+        CommandTypes::ListMode => match_cmd!(ListMode),
+        CommandTypes::ListReset => match_cmd!(ListReset),
+        CommandTypes::Reset => match_cmd!(Reset),
+        CommandTypes::Sync => match_cmd!(Sync),
+        CommandTypes::SetInput | CommandTypes::ListLength(_) => {
+            log_func!(on_red:"doest not support with-paras-commands (fix in next edition)");
+            Err(DDSError::IllegalArgument)
         }
     }
 }
 
-pub(super) fn quick_send(cmd: &str) -> Result<(), DDSError> {
-    match cmd.try_into() {
+pub(crate) fn quick_cmd2datapkg_no_paras(cmd: &CommandTypes) -> Result<DataPacket, DDSError> {
+    match_allcmds!(
+        cmd => PowerOff, Report, Scan, Update, DirectSPI, Init, ListMode, ListReset, Reset, Sync,
+        SetInput,
+    )
+}
+
+/// literal str to cmds (forbidden: bound variable strs)
+macro_rules! match_str_cmds {
+    ($cmd:expr; $($s:literal,)* => $($c:ident,)*) => {
+        match $cmd {
+            $(
+                $s => Ok(CommandTypes::$c),
+            )*
+            _ => Err(DDSError::MissingArgumentError),
+        }
+    };
+}
+
+pub(crate) fn str2cmd(cmdstr: &str) -> Result<CommandTypes, DDSError> {
+    // match cmdstr {
+    //     "poweroff" => Ok(CommandTypes::PowerOff),
+    //     "report" => Ok(CommandTypes::Report),
+    //     "scan" => Ok(CommandTypes::Scan),
+    //     "update" => Ok(CommandTypes::Update),
+    //     "directspi" => Ok(CommandTypes::DirectSPI),
+    //     "init" => Ok(CommandTypes::Init),
+    //     "listmode" => Ok(CommandTypes::ListMode),
+    //     "listreset" => Ok(CommandTypes::ListReset),
+    //     _ => Err(DDSError::IllegalArgument),
+    // }
+    match_str_cmds!(cmdstr;
+        "poweroff", "report", "scan", "update", 
+        "directspi", "init", "listmode", "listreset", "sync", => PowerOff, Report, Scan, Update, DirectSPI, Init, ListMode, ListReset, Sync,)
+}
+/// an easy way to send command from command name (as &str)
+/// does not support commands with paras
+pub(super) fn quick_send(cmdstr: &str) -> Result<(), DDSError> {
+    match cmdstr.try_into() {
         Ok(packet) => {
             send_datapkg(packet);
             Ok(())

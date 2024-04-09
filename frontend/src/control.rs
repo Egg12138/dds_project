@@ -3,7 +3,7 @@
 //! including the majority of the system logic.
 
 use crate::config::{CommandTypes, Input};
-use crate::data::{quick_cmd2data, quick_send, send_datapkg, send_msg};
+use crate::data::{quick_cmd2datapkg_no_paras, quick_send, send_datapkg, send_msg};
 use colored::Colorize;
 use core::panic;
 use std::sync::Once;
@@ -313,11 +313,8 @@ fn checks() {
 }
 
 fn check_esp32() {
-    send_datapkg(quick_cmd2data(&CommandTypes::Report).unwrap());
-    let msg = "command_name: \"report\", paras: {}, request_id: {} ";
-    send_msg(msg.to_string());
-    quick_send("report");
-    log_func!(on_magenta);
+    send_datapkg(quick_cmd2datapkg_no_paras(&CommandTypes::Report).unwrap());
+    log_func!();
 }
 
 /// Duration is unneeded

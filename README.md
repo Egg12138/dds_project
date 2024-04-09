@@ -95,7 +95,22 @@ LEARN luatos LVGL learning basic: (4h)
 * tokio
 
 
+**重要重构——妈的，失算！**
 
+`CommandTypes`应该为:
+
+```rust
+enum CommandTypes {
+  SetInput(InputParas),
+  ...
+}
+```
+
+在cfg中为：
+
+```toml
+command_names = { "set_input" = {freq_hv = 3,14, volt_mv = 6666, phs_oft = 90}}
+```
 
 
 ### communcation

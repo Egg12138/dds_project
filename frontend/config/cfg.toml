@@ -5,8 +5,10 @@
 # 2. command_name = "report", "poweroff", "reset" ...
 # 3. NOTICE: if command_name = "ramp", you should use `ddsc scan <args>`, instead of cfg.toml
 
+# command_name = { "ListLength" = 3 }
 hostname = "MagicBook Windows WSL"
-command_name = { "ListLength" = 3 }
+# command_name = { "ListLength" = 3 }
+command_name = "ListMode"
 [paras]
 freq_hz = 3.1
 vol_mv = 333.14

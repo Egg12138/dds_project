@@ -19,7 +19,8 @@ mod config;
 mod control;
 mod data;
 mod ddserror;
-mod register_control;
+mod rawtests;
+mod register_controller;
 
 use cli::Cli;
 
