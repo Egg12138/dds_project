@@ -29,19 +29,20 @@ use std::fmt::Display;
 use std::result::Result;
 use std::sync;
 
+pub const NUM_CMDS_NOPARAS: usize = 9;
 pub const CMDNAMES: [&str; 12] = [
-    "poweroff",
+    "poweroff", 
     "reset",
-    "setinput",
     "scan",
     "report",
     "update",
-    "direct_spi",
     "sync",
     "list_reset",
     "list_mode",
-    "list_length",
     "init",
+    "setinput", //with paras
+    "list_length", // with paras
+    "direct_spi", //with paras
 ];
 
 #[allow(unused)]
