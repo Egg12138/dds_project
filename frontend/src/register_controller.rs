@@ -5,10 +5,70 @@ use crate::log_func;
 use crate::{config::*, data};
 use colored::Colorize;
 use config::{Config, File};
+use lazy_static::lazy_static;
 use serde_json;
+use std::sync::RwLock;
 
 const MSB: u8 = 0b0;
 const LSB: u8 = 0b1;
+/// Phase-Locked Loop, 输入与输出都是相位信息。可以用外部的参考信号控制
+/// loop内部的震荡信号的频率和相位，使震荡信号与参考信号保持同步。
+const PLL: u32 = 10;
+const REF_CLK: u32 = 5000000;
+const FTW_MASK: u32 = 0xffffffff;
+
+lazy_static! {
+    static ref AFP_SELECTOR: RwLock<AFPSelector> = RwLock::new(AFPSelector::NoModulation);
+    #[deprecated]
+    static ref AFP_SELECTORu8: RwLock<u8> = RwLock::new(0b0);
+}
+
+///  FallingDelta:
+/// AFP_select = 0b01: frequency in Hz, max=clock x PLL, min = (clock x PLL)/ (2^32)
+/// AFP_select = 0b10: amplitude:  max 1023, 10bit word
+/// AFP_select = 0b11: phase: phase in degree, max=360, min = (360)/ (2^14)
+///  RisindDelta:
+// AFP_select = 0b01: frequency in Hz, max=clock x PLL, min = (clock x PLL)/ (2^32)
+// AFP_select = 0b10: amplitude:  max 1023, 10bit word
+// AFP_select = 0b11: phase: phase in degree, max=360, min = (360)/ (2^14)
+pub(self) enum AFPSelector {
+    NoModulation,
+    Frequency, // afp = 0b10
+    Amplitude,// afp = 0b01
+    PhaseDegree, // afp = 0b11
+}
+
+pub(self) fn set_afp_select(to: AFPSelector) {
+    if let Ok(mut afp_select) = AFP_SELECTOR.write() {
+        *afp_select = to;
+    } else {
+        println!("blocked. AFPSelector is been read now.");
+    }
+}
+
+macro_rules! phase2POW {
+    ($p:expr) => {
+        (phase / 360) << 14
+    };
+}
+
+macro_rules! sys_clk_rate {
+    () => {
+        (REF_CLK * PLL)
+    };
+}
+macro_rules! freq2FTW0 {
+    ($fout:expr) => {
+        ((($fout as u64) << 32) / sys_clk_rate!() as u64) as u32
+    };
+}
+
+/// u16
+macro_rules! ph2CPOW0 {
+    ($phout:expr) => {
+        ((0x3fff + 1) * $phout / 360) as u16
+    };
+}
 
 type Channel = (u8, u8, u8, u8);
 
@@ -300,19 +360,107 @@ pub fn CFR(
         | pipe_delay) as u32
 }
 
+// TODO: OOP, self.pll, self.clock
+// TODO: frequency input float? or u32? or f64?
+/// **VCO**-related: PLL
+/// each channel has a decicated 32-bit frequency tunning word
+/// f_out = FTW * f_s / 2^32, f_S = REF_CLK_RATE
+/// FTW = f_out * 2^32 / f_s
 pub fn CFTW(freq: u32) -> u32 {
-    1
+    let cftw = 0x04 << 32;
+    // LEARN: core_clock
+    // LEARN: how to get Frequency Tuning Word (FTW) from desired output freq
+    let cftw_value = freq2FTW0!(freq);
+    cftw | cftw_value
 }
 
-pub fn CPOW() -> u8 {}
+pub fn CPOW(phase: u32) -> u16 {
+    let cpow = 0x05 << 16;
+    let open = 0b00 << 14;
+    let cpow_value = ph2CPOW0!(phase);
+    cpow | open | cpow_value
+}
 
-pub fn ACR(multiplier: bool, amp: u32) -> u8 {}
+/// 24 bits + 1
+/// amplitude ramp rate[23:16] default: N/A
+pub fn ACR(multiplier_enable: bool, amp: u32) -> u32 {
+    let acr = 0x06 << 24;
+    let amp_ramp_rate = 0x00 << 15;
+    let step_size = 0b00 << 14;
+    let open = 0b0 << 13;
+    let multiplier_enable = onoff!(multiplier_enable) << 12 as u32;
+    let ramp_enable = 0b0 << 11;
+    let arr_atioupdate = 0b0 << 10;
+    let amplitude = amp & 0x3ff;
+    acr | amp_ramp_rate
+        | step_size
+        | open
+        | multiplier_enable
+        | ramp_enable
+        | arr_atioupdate
+        | amplitude
+}
 
-pub fn LSRR(fallstep: u32, raisestep: u32) -> u8 {}
+pub fn LSRR(falling_sweep_ramp_rate: u32, rising_sweep_ramp_rate: u32) -> u16 {
+    let lsrr = 0x07 << 16;
+    let sync_clk = sys_clk_rate!() / 4;
+    let frr = if falling_sweep_ramp_rate > (0xff / sync_clk) {
+        0xff / sync_clk
+    } else if falling_sweep_ramp_rate < 1 / sync_clk {
+        1 / sync_clk
+    } else {
+        panic!("Impossible! Falling Ramp Rate set incorrectly! ");
+    } * sync_clk;
+    let frr = frr as u16;
+    // let frr = (falling_sweep_ramp_rate * sync_clk) as u32 << 8;
+    let rrr = if rising_sweep_ramp_rate > (0xff / sync_clk) {
+        0xff / sync_clk
+    } else if rising_sweep_ramp_rate < 1 / sync_clk {
+        sync_clk
+    } else {
+        panic!("Impossible! Rising Ramp Rate set incorrectly! ");
+    } * sync_clk;
+    let rrr = rrr as u16;
+    lsrr | frr | rrr
+}
 
-pub fn RDW(step: u32) -> u8 {}
 
-pub fn FDW(step: u32) -> u8 {}
+// TODO: 匹配0b01, 0b10顺序有错误!!!
+pub fn RDW(step: u32) -> u32 {
+    let rdw = 0x08 << 32;
+    let core_clock = sys_clk_rate!();
+    let rdw_value = {if let Ok(afp) = AFP_SELECTOR.read() {
+        match *afp {
+            AFPSelector::NoModulation => {0}
+            AFPSelector::Amplitude => {
+                if step > 0x3ff {
+                    log_func!(red:"amplitude modulation selected");
+                    0x3ff << 22
+                } else {
+                    (step & 0x3ff )<< 22
+                }
+            }
+            AFPSelector::Frequency => {
+                // FIXME check  bitwise
+                if step > core_clock {
+                    log_func!(red:"frequency modulation selected");
+                    (0xffffffff + 1) & 0xffffffff
+                } else {
+                    ((0xffffffff + 1) * step / core_clock) & 0xffffffff
+                }
+            }
+            AFPSelector::PhaseDegree => {
+                (((0x3fff + 1) * step / 360) & 0x3fff) << 18
+            }
+        }
+    } else {
+        log_func!(on_red:"RwLock<AFPSelector> is not accessed");
+        0
+    }};
+    rdw | rdw_value
+}
+
+pub fn FDW(step: u32) -> u32 {}
 
 pub fn CW(num: u8, word: u32) -> u8 {}
 
@@ -329,4 +477,11 @@ fn test_gen_fn_exits() {
     list_reset_dds();
     list_mode_dds();
     init_dds();
+}
+
+/// considering the u64 -> u32 conversion, the FTW value should be checked
+#[test]
+fn ctwf_value_right() {
+    assert_eq!(freq2FTW0!(1000000000), 0x00000000_00000001);
+    assert_eq!(CFTW(0x11210245), 0);
 }
