@@ -31,7 +31,7 @@ use std::sync;
 
 pub const NUM_CMDS_NOPARAS: usize = 9;
 pub const CMDNAMES: [&str; 12] = [
-    "poweroff", 
+    "poweroff",
     "reset",
     "scan",
     "report",
@@ -40,10 +40,17 @@ pub const CMDNAMES: [&str; 12] = [
     "list_reset",
     "list_mode",
     "init",
-    "setinput", //with paras
+    "setinput",    //with paras
     "list_length", // with paras
-    "direct_spi", //with paras
+    "direct_spi",  //with paras
 ];
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+pub struct DataStream {
+    pub command_name: CommandTypes,
+    pub paras: u64,
+    pub request_id: u64,
+}
 
 #[allow(unused)]
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
@@ -51,7 +58,7 @@ pub struct DataPacket {
     pub command_name: CommandTypes,
     pub paras: Option<Paras>,
     /// default: "0", from_input: "1", from other types: "2", from MQTT: complicated
-    pub request_id: String,
+    pub request_id: u64,
 }
 
 impl Default for DataPacket {
@@ -77,7 +84,7 @@ impl Default for DataPacket {
         DataPacket {
             command_name: CommandTypes::SetInput,
             paras: Some(Paras::new(0f64, 0f32, 0)),
-            request_id: "0".to_string(),
+            request_id: 0,
         }
     }
 }
@@ -111,7 +118,7 @@ impl TryFrom<&str> for DataPacket {
             Ok(DataPacket {
                 command_name: value.into(),
                 paras: None,
-                request_id: "2".to_string(),
+                request_id: 2,
             })
         }
     }
@@ -127,29 +134,8 @@ impl From<cfg::Input> for DataPacket {
         DataPacket {
             command_name: command_name.clone(),
             paras: Some(Paras::new(freq_hz, vol_mv, ph_oft)),
-            request_id: "1".to_string(),
+            request_id: 1,
         }
-    }
-}
-
-/// wait for the response from ESP32
-async fn mcu_response() -> bool {
-    //TODO: using Notify.rs
-    true
-}
-
-/// pass op: FnOnce
-#[allow(unused)]
-async fn wait4response_and() {
-    // pseudo code:
-    if mcu_response().await {
-        cfg::show()
-    }
-}
-
-pub(crate) async fn wait4response_show() {
-    if mcu_response().await {
-        cfg::show()
     }
 }
 
@@ -200,6 +186,28 @@ pub(crate) fn send_msg(msg: String) {
     log_func!(cyan: " sent.");
 }
 
+pub(crate) fn send_cmd_with_paras(data: DataStream) -> Result<(), DDSError> {
+    log_func!(cyan:"receiving DataStream struct...");
+    if let Ok(encoded) = serde_json::to_string_pretty(&data) {
+        println!("\t {:?} => {:?}, ", data, encoded);
+        unsafe {
+            match try_send(encoded) {
+                Ok(_) => {
+                    log_func!("\tbytes Sent!");
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("\tsend error.{:?}", e);
+                    Err(e)
+                }
+            }
+        }
+    } else {
+        log_func!(on_red:"failed to encode datapacket to string");
+        Err(DDSError::ConvertionError)
+    }
+}
+
 pub(crate) fn send_datapkg(pkg: DataPacket) -> Result<(), DDSError> {
     log_func!(cyan: "receiving DataPacket struct...");
     if let Ok(encoded) = serde_json::to_string_pretty(&pkg) {
@@ -234,7 +242,7 @@ macro_rules! match_cmd {
         Ok(DataPacket {
             command_name: CommandTypes::$pattern,
             paras: None,
-            request_id: "2".to_string(),
+            request_id: 2,
         })
     };
 }
@@ -259,12 +267,12 @@ pub(crate) fn quick_cmd2data(cmd: CommandTypes) -> DataPacket {
         CommandTypes::ListLength(ll) => DataPacket {
             command_name: CommandTypes::ListLength(ll),
             paras: None, // TODO
-            request_id: "2".to_string(),
+            request_id: 2,
         },
         cmdtypes => DataPacket {
             command_name: cmdtypes,
             paras: None,
-            request_id: "2".to_string(),
+            request_id: 2,
         },
     }
 }
@@ -325,14 +333,21 @@ pub(crate) fn str2cmd(cmdstr: &str) -> Result<CommandTypes, DDSError> {
         "poweroff", "report", "scan", "update", 
         "directspi", "init", "listmode", "listreset", "sync", => PowerOff, Report, Scan, Update, DirectSPI, Init, ListMode, ListReset, Sync,)
 }
+
 /// an easy way to send command from command name (as &str)
 /// does not support commands with paras
-pub(super) fn quick_send(cmdstr: &str) -> Result<(), DDSError> {
+pub(super) fn quick_send_noparas(cmdstr: &str) -> Result<(), DDSError> {
     match cmdstr.try_into() {
-        Ok(packet) => {
-            send_datapkg(packet);
-            Ok(())
-        }
+        Ok(packet) => send_datapkg(packet),
         Err(e) => Err(e),
     }
+}
+
+pub fn quick_send_withparas(cmd: CommandTypes, paras: u64) -> Result<(), DDSError> {
+    let data = DataStream {
+        command_name: cmd,
+        paras,
+        request_id: 0,
+    };
+    send_cmd_with_paras(data)
 }

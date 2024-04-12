@@ -52,7 +52,7 @@ fn cmd2datastr() {
         DataPacket {
             command_name: CommandTypes::Report,
             paras: None,
-            request_id: "2".to_string(),
+            request_id: 2
         }
     );
 }

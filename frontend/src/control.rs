@@ -3,7 +3,7 @@
 //! including the majority of the system logic.
 
 use crate::config::{CommandTypes, Input};
-use crate::data::{quick_cmd2datapkg_no_paras, quick_send, send_datapkg, send_msg};
+use crate::data::{quick_cmd2datapkg_no_paras, quick_send_noparas, send_datapkg, send_msg};
 use colored::Colorize;
 use core::panic;
 use std::sync::Once;
@@ -325,7 +325,7 @@ pub(crate) fn poweroff(wait: Option<u64>) {
         thread::sleep(Duration::from_millis(ms));
     }
     // send_msg(msg_json);
-    quick_send("poweroff").expect("failed to poweroff! ");
+    quick_send_noparas("poweroff").expect("failed to poweroff! ");
 
     // TODO:
     unsafe {

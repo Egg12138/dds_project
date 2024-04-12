@@ -51,6 +51,16 @@ macro_rules! AFP_2bits {
         }
     };
 }
+
+macro_rules! onoff {
+    ($s:expr) => {
+        if $s {
+            0b1
+        } else {
+            0b0
+        }
+    };
+}
 /// Modulatio Level bits `FR1[9:8]`
 pub(self) enum ModulationLevel {
     /// 0b00
@@ -189,7 +199,7 @@ macro_rules! channel {
     };
 }
 
-#[cfg(feature = "release")]
+#[cfg(debug_assertions)]
 macro_rules! template_noparas_cmd {
     ($c:ident) => {
         let $c = str2cmd(stringify!($c)).unwrap();
@@ -200,6 +210,7 @@ macro_rules! template_noparas_cmd {
         log_func!();
     };
 }
+
 #[cfg(test)]
 macro_rules! template_noparas_cmd {
     ($c:ident) => {
@@ -238,6 +249,7 @@ template_genfns!([
 
 // with-paras cmds
 // TODO: important, refactor from `Input` driven into the common DataPacket driven.
+#[cfg(test)]
 pub fn setinput_dds() -> Result<(), DDSError> {
     let builder = Config::builder()
         .add_source(File::with_name(LOCAL_CFG_PATH))
@@ -261,6 +273,19 @@ pub fn setinput_dds() -> Result<(), DDSError> {
     }
 }
 
+pub(crate) fn direct_spi(reg_id: u8, data: u64) -> Result<(), DDSError> {
+    // TODO: how and what to do?
+    // add the register address
+    // match reg_id: ... u24, u16, u32, ...
+    let paras = (reg_id as u64) << 24 | data;
+    quick_send_withparas(CommandTypes::DirectSPI, paras)
+}
+pub(crate) fn list_length(len: u32) -> Result<(), DDSError> {
+    // TODO refactor CommandTypes::ListLENGTH
+    // NOTICE: 先不做这个！
+    quick_send_withparas(CommandTypes::ListLength(len), len as u64)
+}
+
 pub fn CSR(channel: Channel) -> u8 {
     // let csr = 0x20 << 8;
     let (ch0, ch1, ch2, ch3) = channel;
@@ -273,7 +298,7 @@ pub fn CSR(channel: Channel) -> u8 {
     (ch0 | ch1 | ch2 | ch3 | singlebit_2wire | MSB | open) as u8
 }
 
-pub fn FR1(pll_div: u8, mod_level: u8) -> u32 {
+pub fn FR1(pll_div: u8, mod_level: ModulationLevel) -> u32 {
     let fr1 = 0x01 << 24; //Function Register 1 (FR1)—Address 0x01
     let vco_gain = 0b1_u32 << 23; //0 = the low range (system clock below 160 MHz) (default).
                                   //1 = the high range (system clock above 255 MHz).
@@ -287,10 +312,10 @@ pub fn FR1(pll_div: u8, mod_level: u8) -> u32 {
     let ppc_conf = 0b000 << 12; //The profile pin configuration bits control the configuration of the data and SDIO_x pins for the
                                 //different modulation modes.
     let ru_rd = 0b00 << 10; //The RU/RD bits control the amplitude ramp-up/ramp-down time of a channel.
-    let mod_lvl: u32 = (mod_level as u32 & 0b00) << 8; //00 = 2-level modulation
-                                                       //01 = 4-level modulation
-                                                       //10 = 8-level modulation
-                                                       //11 = 16-level modulation
+    let mod_lvl: u32 = (Modlv_2bits!(mod_level) as u32 & 0b00) << 8; //00 = 2-level modulation
+                                                                     //01 = 4-level modulation
+                                                                     //10 = 8-level modulation
+                                                                     //11 = 16-level modulation
     let ref_clock = 0b0 << 7; //0 = the clock input circuitry is enabled for operation (default).
                               //1 = the clock input circuitry is disabled and is in a low power dissipation state.
     let pow_mode = 0b0 << 6; //0 = the external power-down mode is in fast recovery power-down mode (default). In this mode,
@@ -361,46 +386,23 @@ pub fn FR2() -> u32 {
         | sys_clock_off) as u32
 }
 
-enum AFPSelect {
-    /// default: disable
-    DisableModulation,
-    AmpModulation,
-    FreqModulation,
-    PhaseModulation,
-}
-
-macro_rules! AFPS {
-    ($s:expr) => {
-        match $s {
-            AFPSelect::DisableModulation => 0b00,
-            AFPSelect::AmpModulation => 0b01,
-            AFPSelect::FreqModulation => 0b10,
-            AFPSelect::PhaseModulation => 0b11,
-        }
-    };
-}
-
-macro_rules! onoff {
-    ($s:expr) => {
-        if $s {
-            0b1
-        } else {
-            0b0
-        }
-    };
-}
-
 // TODO: decide the input type should be bool type, customized type or u8/u16/u32?
 /// NOTICE: 每个channel都有同样的这个progile registers设置，
+///The slope of the linear sweep is set by the intermediate step size
+/// (delta-tuning word) between S0 (memory 0 or actual value) and E0 (memory 1 see CW_register) and the time spent
+/// (sweep ramp rate word) at each step. The resolution of the
+/// delta-tuning word is 32 bits for frequency, 14 bits for phase, and
+/// 10 bits for amplitude. The resolution for the delta ramp rate
+/// word is eight bits
 pub fn CFR(
-    afp: AFPSelect,
-    lsweep_nodwell: bool,
-    lsweep_enable: bool,
-    srr_at_ioupdate: bool,
+    afp: AFPSelector,
+    lsweep_nodwell: bool,  // default = 0 (inactive)
+    lsweep_enable: bool,   // default = 0 (inactive)
+    srr_at_ioupdate: bool, // default = 0: linear sweep ramp rate timer is loaded only upon timeout
 ) -> u32 {
     // NOTICE: u24寄存器不会受到OF影响，但是我们需要保证统一数据格式。
     // let cfr = 0x03 << 24;
-    let AFP_select = AFPS!(afp) << 22;
+    let AFP_select = AFP_2bits!(afp) << 22;
     let open1 = 0b0 << 16;
     let lsweep_nodwell = onoff!(lsweep_nodwell) << 15;
     let lsweep_enable = onoff!(lsweep_enable) << 14;
@@ -567,7 +569,19 @@ pub fn CW(cwid: u8, word: u32) -> u32 {
     cw_n_value
 }
 
-pub fn init_viaSPI() {}
+pub fn init_viaSPI(pll_div: u8, afp: AFPSelector, mod_lvl: ModulationLevel, send: bool) {
+    let csr_spi = CSR((1, 1, 1, 1));
+    let fr1_spi = FR1(pll_div, ModulationLevel::Two);
+    let fr2_spi = FR2();
+    let cfr_spi = CFR(afp, false, false, false);
+    if send {
+        direct_spi(csr_spi);
+        direct_spi(fr1_spi);
+        direct_spi(fr2_spi);
+        direct_spi(cfr_spi);
+    }
+    // TODO: what should be return?
+}
 
 #[test]
 fn test_gen_fn_exits() {
