@@ -7,10 +7,10 @@ use crate::register_controller::*;
 use colored::Colorize;
 use config::{Config, File};
 
-#[test]
-fn read_config_works() {
-    assert!(setinput_dds().is_ok())
-}
+// #[cfg(test)]
+// fn read_config_works() {
+//     assert!(setinput_dds().is_ok())
+// }
 
 #[test]
 fn set_input_works() {

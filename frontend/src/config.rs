@@ -396,7 +396,6 @@ pub(crate) fn quick_input_watcher(script: String) {
     control::execute(script);
     // TODO: asyn executing:
     show();
-    data::wait4response_show();
     watch();
 }
 

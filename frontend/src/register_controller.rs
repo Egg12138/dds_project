@@ -19,10 +19,54 @@ const PLL: u32 = 10;
 const REF_CLK: u32 = 5000000;
 const FTW_MASK: u32 = 0xffffffff;
 
+const CSRAddr: u8 = 0x00;
+const FR1Addr: u8 = 0x01;
+const FR2Addr: u8 = 0x02;
+const CFRAddr: u8 = 0x03;
+const CFTW0Addr: u8 = 0x04;
+const CPOW0Addr: u8 = 0x05;
+const ACRAddr: u8 = 0x06;
+const LSRRAddr: u8 = 0x07;
+const RDWAddr: u8 = 0x08;
+const FDWAddr: u8 = 0x09;
+
 lazy_static! {
     static ref AFP_SELECTOR: RwLock<AFPSelector> = RwLock::new(AFPSelector::NoModulation);
     #[deprecated]
     static ref AFP_SELECTORu8: RwLock<u8> = RwLock::new(0b0);
+}
+
+pub(self) enum Channel {
+    Zero,
+    One,
+    Two,
+    Three,
+}
+type Channels = (u8, u8, u8, u8);
+
+/// convert the given literal (e.g: 0b0110) into a tuple of 4 channal on/off.
+macro_rules! channels_frombits {
+    ($v:expr) => {
+        (($v & 0b1000), ($v & 0b0100), ($v & 0b0010), ($v & 0b0001))
+    };
+}
+
+macro_rules! channel_id2bits {
+    (0) => {
+        0b1000
+    };
+    (1) => {
+        0b0100
+    };
+    (2) => {
+        0b0010
+    };
+    (3) => {
+        0b0001
+    };
+    ($input:expr) => {
+        0
+    };
 }
 
 /// **Amplitude Frequency Phase Select(AFPSelector)** bits. `CFR[23:22]`
@@ -140,37 +184,6 @@ macro_rules! ph2CPOW0 {
     };
 }
 
-type Channel = (u8, u8, u8, u8);
-
-/// convert the given literal (e.g: 0b0110) into a tuple of 4 channal on/off.
-macro_rules! allch_frombits {
-    ($v:literal) => {
-        let ch0 = ($v & 0b1000);
-        let ch1 = ($v & 0b0100);
-        let ch2 = ($v & 0b0010);
-        let ch3 = ($v & 0b0001);
-        (ch0, ch1, ch2, ch3)
-    };
-}
-
-macro_rules! channel_id2bits_faster {
-    (0) => {
-        0b1000
-    };
-    (1) => {
-        0b0100
-    };
-    (2) => {
-        0b0010
-    };
-    (3) => {
-        0b0001
-    };
-    ($input:expr) => {
-        0
-    };
-}
-
 /// ```rust
 /// assert_eq!(channel_id2bits!(0), 0b1000);
 /// assert_eq!(channel_id2bits!(1), 0b0100);
@@ -189,13 +202,6 @@ macro_rules! channel_id2bits {
             output >>= 1;
         }
         output
-    };
-}
-
-macro_rules! channel {
-    ($id:literal) => {
-        let bits: u8 = 0b0;
-        // IMPL: bitwise
     };
 }
 
@@ -273,12 +279,18 @@ pub fn setinput_dds() -> Result<(), DDSError> {
     }
 }
 
-pub(crate) fn direct_spi(reg_id: u8, data: u64) -> Result<(), DDSError> {
+pub(crate) fn direct_spi(
+    // reg_id: u8,
+    data: u64,
+) {
     // TODO: how and what to do?
     // add the register address
     // match reg_id: ... u24, u16, u32, ...
-    let paras = (reg_id as u64) << 24 | data;
-    quick_send_withparas(CommandTypes::DirectSPI, paras)
+    // let paras = (reg_id as u64) << 24 | data;
+    let Ok(_) = quick_send_withparas(CommandTypes::DirectSPI, data) else {
+        log_func!(on_red:"Failed to send via direct SPI");
+        return;
+    };
 }
 pub(crate) fn list_length(len: u32) -> Result<(), DDSError> {
     // TODO refactor CommandTypes::ListLENGTH
@@ -286,20 +298,24 @@ pub(crate) fn list_length(len: u32) -> Result<(), DDSError> {
     quick_send_withparas(CommandTypes::ListLength(len), len as u64)
 }
 
-pub fn CSR(channel: Channel) -> u8 {
-    // let csr = 0x20 << 8;
-    let (ch0, ch1, ch2, ch3) = channel;
+/// **NOTICE**: if you wanna use CSR, you have to notice that CSR is a eight-bit register
+/// but we set more than 8 bits.
+pub fn CSR(channels: Channels) -> u16 {
+    let csr = (CSRAddr as u16) << 8;
+    let (ch0, ch1, ch2, ch3) = channels;
     let open = 0b0 << 3;
     let singlebit_2wire = 0b00 << 1;
     let singlebit_3wire = 0b01 << 1;
     let serial_2bit = 0b10 << 1;
     let serial_3bit = 0b11 << 1;
 
-    (ch0 | ch1 | ch2 | ch3 | singlebit_2wire | MSB | open) as u8
+    (csr | ch0 as u16 | ch1 as u16 | ch2 as u16 | ch3 as u16 | singlebit_2wire | MSB as u16 | open)
+        as u16
 }
 
+/// DON'T NEED u32 cast only for `fr1` id bits.max: 24bits
 pub fn FR1(pll_div: u8, mod_level: ModulationLevel) -> u32 {
-    let fr1 = 0x01 << 24; //Function Register 1 (FR1)—Address 0x01
+    let fr1 = (FR1Addr << 24) as u32; //Function Register 1 (FR1)—Address 0x01
     let vco_gain = 0b1_u32 << 23; //0 = the low range (system clock below 160 MHz) (default).
                                   //1 = the high range (system clock above 255 MHz).
     let pll_div_c = (pll_div as u32) << 18; //If the value is 4 or 20 (decimal) or between 4 and 20, the PLL is enabled and the value sets the
@@ -337,7 +353,7 @@ pub fn FR1(pll_div: u8, mod_level: ModulationLevel) -> u32 {
                              //1 = the manual software synchronization feature of multiple devices is active
 
     //composition of the command.
-    (vco_gain
+    (fr1 | vco_gain
         | pll_div_c
         | pump_150uA
         | open1
@@ -353,7 +369,7 @@ pub fn FR1(pll_div: u8, mod_level: ModulationLevel) -> u32 {
         | man_soft_sync) as u32
 }
 pub fn FR2() -> u32 {
-    // let fr2 = 0x02 << 16;
+    let fr2 = (FR2Addr as u32) << 16;
 
     // set register map
     // for all channels:
@@ -372,7 +388,7 @@ pub fn FR2() -> u32 {
     let open2 = 0b00 << 2;
     let sys_clock_off = 0b0;
 
-    (clear_phase_acc
+    (fr2 | clear_phase_acc
         | auto_clr_ph_acc
         | clr_sweep_acc
         | auto_clr_sweep_acc
@@ -401,7 +417,7 @@ pub fn CFR(
     srr_at_ioupdate: bool, // default = 0: linear sweep ramp rate timer is loaded only upon timeout
 ) -> u32 {
     // NOTICE: u24寄存器不会受到OF影响，但是我们需要保证统一数据格式。
-    // let cfr = 0x03 << 24;
+    let cfr = (CFRAddr as u32) << 24;
     let AFP_select = AFP_2bits!(afp) << 22;
     let open1 = 0b0 << 16;
     let lsweep_nodwell = onoff!(lsweep_nodwell) << 15;
@@ -418,7 +434,7 @@ pub fn CFR(
     let auto_clr_ph = 0b0 << 2;
     let clr_ph_acc = 0b1 << 1;
     let sin_out = 0b0;
-    (AFP_select
+    (cfr | AFP_select
         | open1
         | lsweep_nodwell
         | lsweep_enable
@@ -458,7 +474,7 @@ pub fn CPOW(phase: u32) -> u16 {
 /// amplitude ramp rate[23:16] default: N/A
 /// NOTICE: 每个channel都有同样的这个progile registers设置，
 pub fn ACR(multiplier_enable: bool, amp: u32) -> u32 {
-    // let acr = 0x06 << 24;
+    let acr = 0x06 << 24;
     let amp_ramp_rate = 0x00 << 15;
     let step_size = 0b00 << 14;
     let open = 0b0 << 13;
@@ -466,7 +482,13 @@ pub fn ACR(multiplier_enable: bool, amp: u32) -> u32 {
     let ramp_enable = 0b0 << 11;
     let arr_atioupdate = 0b0 << 10;
     let amplitude = amp & 0x3ff;
-    amp_ramp_rate | step_size | open | multiplier_enable | ramp_enable | arr_atioupdate | amplitude
+    acr | amp_ramp_rate
+        | step_size
+        | open
+        | multiplier_enable
+        | ramp_enable
+        | arr_atioupdate
+        | amplitude
 }
 
 /// Linear Sweep Ramp Rate
@@ -570,17 +592,57 @@ pub fn CW(cwid: u8, word: u32) -> u32 {
 }
 
 pub fn init_viaSPI(pll_div: u8, afp: AFPSelector, mod_lvl: ModulationLevel, send: bool) {
-    let csr_spi = CSR((1, 1, 1, 1));
-    let fr1_spi = FR1(pll_div, ModulationLevel::Two);
+    let csr_spi = (CSR((1, 1, 1, 1)) as u64) << 40;
+    let fr1_spi = (FR1(pll_div, ModulationLevel::Two) as u64);
     let fr2_spi = FR2();
     let cfr_spi = CFR(afp, false, false, false);
     if send {
-        direct_spi(csr_spi);
-        direct_spi(fr1_spi);
-        direct_spi(fr2_spi);
-        direct_spi(cfr_spi);
+        // direct_spi(CSRAddr, csr_spi as u64);
+        // direct_spi(FR1Addr, fr1_spi as u64);
+        // direct_spi(FR2Addr, fr2_spi as u64);
+        // direct_spi(CFRAddr, cfr_spi as u64);
+        direct_spi(csr_spi as u64);
+        direct_spi(fr1_spi as u64);
+        direct_spi(fr2_spi as u64);
+        direct_spi(cfr_spi as u64);
     }
-    // TODO: what should be return?
+    // TODO: what should be return?a
+}
+
+pub fn set_frequency(channel: u8, freq: u32, send: bool) -> Result<u64, DDSError> {
+    let csr_spi: u64 = (CSR(channels_frombits!(channel)) as u64) << 40;
+    let cftw_spi = CFTW(freq) as u64;
+    let freq_cmd = (csr_spi | cftw_spi) as u64;
+    if send {
+        direct_spi(freq_cmd);
+    }
+    Ok(freq_cmd)
+}
+
+pub fn set_amplitude(channel: u8, amp: u32, send: bool) -> Result<u64, DDSError> {
+    let csr_spi: u64 = (CSR(channels_frombits!(channel)) as u64) << 32;
+    if amp > 1024 {
+        log_func!(red:"max amplitude 1023, clamped");
+    }
+    let acr_spi = ACR(true, amp) as u64;
+    let amp_cmd = (csr_spi | acr_spi) as u64;
+    if send {
+        direct_spi(amp_cmd);
+    }
+    Ok(amp_cmd)
+}
+
+pub fn set_phase(channel: u8, phase: u32, send: bool) -> Result<u64, DDSError> {
+    let csr_spi: u64 = (CSR(channels_frombits!(channel)) as u64) << 24;
+    if phase > 360 {
+        log_func!(red:"max phase 360, clamped");
+    }
+    let cph_spi = CPOW(phase) as u64;
+    let phase_cmd = (csr_spi | cph_spi) as u64;
+    if send {
+        direct_spi(phase_cmd);
+    }
+    Ok(phase_cmd)
 }
 
 #[test]
