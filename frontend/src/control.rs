@@ -1,6 +1,7 @@
 //! the module to controlling the *frontend*
 //! ,generating data packet, and communication to MCU
 //! including the majority of the system logic.
+#![allow(unused_variables, unused_features, unused_imports, dead_code)]
 
 use crate::config::{CommandTypes, Input};
 use crate::data::{quick_cmd2datapkg_no_paras, quick_send_noparas, send_datapkg, send_msg};

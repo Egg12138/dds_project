@@ -2,19 +2,16 @@
 
 #![allow(deprecated)]
 
-use crate::cli::CommunicationMethod;
 use crate::control;
 use crate::data;
-use crate::data::CMDNAMES;
 use crate::ddserror::DDSError;
 use crate::log_func;
 use colored::Colorize;
-use config::{Config, ConfigError, Environment, File};
+use config::{Config, Environment, File};
 use core::panic;
 use lazy_static::lazy_static;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::fmt::write;
 #[allow(unused_imports)]
@@ -188,7 +185,6 @@ impl From<&str> for CommandTypes {
                     _ => panic!("Unknown command type"),
                 }
             }
-            _ => panic!("Invalid command type"),
         }
     }
 }
@@ -481,8 +477,6 @@ pub fn write_to_cfg() {
 
 #[test]
 fn config_demo() {
-    use super::*;
-    use std::collections::HashMap;
     let builder = Config::builder()
         .add_source(File::with_name("test.toml"))
         .build();
@@ -494,7 +488,6 @@ fn config_demo() {
 
 #[test]
 fn config_global() {
-    use super::*;
     use std::error::Error;
     use std::sync::RwLock;
 

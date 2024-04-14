@@ -15,8 +15,8 @@
 //!
 //!
 
-use crate::cli::{CommunicationMethod, DataArgs};
-use crate::config::{CommandTypes, Input, Paras};
+use crate::cli::CommunicationMethod;
+use crate::config::{CommandTypes, Paras};
 use crate::control::{has_connected, poweroff};
 use crate::ddserror::{self, DDSError};
 use crate::{config as cfg, control};
@@ -318,17 +318,6 @@ macro_rules! match_str_cmds {
 }
 
 pub(crate) fn str2cmd(cmdstr: &str) -> Result<CommandTypes, DDSError> {
-    // match cmdstr {
-    //     "poweroff" => Ok(CommandTypes::PowerOff),
-    //     "report" => Ok(CommandTypes::Report),
-    //     "scan" => Ok(CommandTypes::Scan),
-    //     "update" => Ok(CommandTypes::Update),
-    //     "directspi" => Ok(CommandTypes::DirectSPI),
-    //     "init" => Ok(CommandTypes::Init),
-    //     "listmode" => Ok(CommandTypes::ListMode),
-    //     "listreset" => Ok(CommandTypes::ListReset),
-    //     _ => Err(DDSError::IllegalArgument),
-    // }
     match_str_cmds!(cmdstr;
         "poweroff", "report", "scan", "update", 
         "directspi", "init", "listmode", "listreset", "sync", => PowerOff, Report, Scan, Update, DirectSPI, Init, ListMode, ListReset, Sync,)
@@ -351,3 +340,5 @@ pub fn quick_send_withparas(cmd: CommandTypes, paras: u64) -> Result<(), DDSErro
     };
     send_cmd_with_paras(data)
 }
+
+pub fn quick_gen_binary() {}

@@ -4,7 +4,7 @@
     non_snake_case,
     clippy::upper_case_acronyms
 )]
-#![feature(ip_bits, const_refs_to_static)]
+#![feature(ip_bits, const_refs_to_static, div_duration)]
 
 use clap::Parser;
 
@@ -50,10 +50,7 @@ fn main() {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::cli::Cli;
-    use crate::config;
-    use crate::control;
-    use clap::{Command, Subcommand};
+    use clap::Subcommand;
 
     const CMDS: [&'static str; 8] = [
         "init", "config", "repl", "power", "repl", "run", "monitor", "data",

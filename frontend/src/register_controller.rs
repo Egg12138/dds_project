@@ -2,12 +2,14 @@
 use crate::data::*;
 use crate::ddserror::DDSError;
 use crate::log_func;
+use crate::sys_clk_rate;
 use crate::{config::*, data};
 use colored::Colorize;
 use config::{Config, File};
 use lazy_static::lazy_static;
 use serde_json;
 use std::sync::RwLock;
+use std::time::Duration;
 
 //TODO: refactor definitions to another file.
 
@@ -18,22 +20,41 @@ const LSB: u8 = 0b1;
 const PLL: u32 = 10;
 const REF_CLK: u32 = 5000000;
 const FTW_MASK: u32 = 0xffffffff;
+// TODO: 应该把fmin, fmax全部作为const
 
-const CSRAddr: u8 = 0x00;
-const FR1Addr: u8 = 0x01;
-const FR2Addr: u8 = 0x02;
-const CFRAddr: u8 = 0x03;
-const CFTW0Addr: u8 = 0x04;
-const CPOW0Addr: u8 = 0x05;
-const ACRAddr: u8 = 0x06;
-const LSRRAddr: u8 = 0x07;
-const RDWAddr: u8 = 0x08;
-const FDWAddr: u8 = 0x09;
+const CSRAddr: u32 = 0x00;
+const FR1Addr: u32 = 0x01;
+const FR2Addr: u32 = 0x02;
+const CFRAddr: u32 = 0x03;
+const CFTW0Addr: u32 = 0x04;
+const CPOW0Addr: u32 = 0x05;
+const ACRAddr: u32 = 0x06;
+const LSRRAddr: u32 = 0x07;
+const RDWAddr: u32 = 0x08;
+const FDWAddr: u32 = 0x09;
+
+#[macro_export]
+macro_rules! sys_clk_rate {
+    () => {
+        (REF_CLK * PLL)
+    };
+}
+
+/// the maximum time interval o(At 500MSPS operation (SYC_CLK = 125MHz),
+/// is : (1 / 125MHz) x 256= 2.048us
+const MaxRampInterval: Duration = Duration::from_nanos(2048);
+/// the minimum time interval o(At 500MSPS operation (SYC_CLK = 125MHz),
+/// is : (1 / 125MHz) = 8.0ns
+const MinRampInterval: Duration = Duration::from_nanos(8);
+// BUG: overflow + too_small_clock_rate
+// const MinFreqDeltaHz: u64 = sys_clk_rate!() as u64 >> 32;
 
 lazy_static! {
     static ref AFP_SELECTOR: RwLock<AFPSelector> = RwLock::new(AFPSelector::NoModulation);
     #[deprecated]
     static ref AFP_SELECTORu8: RwLock<u8> = RwLock::new(0b0);
+    static ref START_COMMANDS: RwLock<Vec<u64>> = RwLock::new(vec![]);
+    static ref MEM_COMMANDS: RwLock<Vec<u64>> = RwLock::new(vec![]);
 }
 
 pub(self) enum Channel {
@@ -47,22 +68,22 @@ type Channels = (u8, u8, u8, u8);
 /// convert the given literal (e.g: 0b0110) into a tuple of 4 channal on/off.
 macro_rules! channels_frombits {
     ($v:expr) => {
-        (($v & 0b1000), ($v & 0b0100), ($v & 0b0010), ($v & 0b0001))
+        (($v & 0b0001), ($v & 0b0010), ($v & 0b0100), ($v & 0b1000))
     };
 }
 
 macro_rules! channel_id2bits {
     (0) => {
-        0b1000
+        0b0000
     };
     (1) => {
-        0b0100
-    };
-    (2) => {
         0b0010
     };
+    (2) => {
+        0b0100
+    };
     (3) => {
-        0b0001
+        0b1000
     };
     ($input:expr) => {
         0
@@ -78,6 +99,7 @@ macro_rules! channel_id2bits {
 // AFP_select = 0b01: frequency in Hz, max=clock x PLL, min = (clock x PLL)/ (2^32)
 // AFP_select = 0b10: amplitude:  max 1023, 10bit word
 // AFP_select = 0b11: phase: phase in degree, max=360, min = (360)/ (2^14)
+#[derive(Clone)]
 pub(self) enum AFPSelector {
     NoModulation,    // Linear Sweep Enable = X (LSE = X)
     AmpModulation,   // afp = 0b01, LSE = 0
@@ -152,6 +174,7 @@ macro_rules! RURD_2bits {
     };
 }
 
+/// and actually, the Lock is unneccasry
 pub(self) fn set_afp_select(to: AFPSelector) {
     if let Ok(mut afp_select) = AFP_SELECTOR.write() {
         *afp_select = to;
@@ -166,21 +189,18 @@ macro_rules! phase2POW {
     };
 }
 
-macro_rules! sys_clk_rate {
-    () => {
-        (REF_CLK * PLL)
-    };
-}
 macro_rules! freq2FTW0 {
     ($fout:expr) => {
-        ((($fout as u64) << 32) / sys_clk_rate!() as u64) as u32
+        ((($fout as u64) << 32) / sys_clk_rate!() as u64) as u64
     };
 }
 
 /// u16
+/// convert the expected phase to the POW0 register value.
+///  
 macro_rules! ph2CPOW0 {
     ($phout:expr) => {
-        ((0x3fff + 1) * $phout / 360) as u16
+        ((0x3fff + 1) * $phout / 360) as u32
     };
 }
 
@@ -190,19 +210,20 @@ macro_rules! ph2CPOW0 {
 /// assert_eq!(channel_id2bits!(2), 0b0010);
 /// assert_eq!(channel_id2bits!(3), 0b0001);
 /// ```
+/// return the channel btis when **only ONE** channel is enable.
 #[deprecated(
     since = "0.1.5",
     note = "use `channel_bits2id` instead, 
 which is implemented by simple pattern match"
 )]
 macro_rules! channel_id2bits {
-    ($id:expr) => {
-        let mut output = 0b1000;
-        for _ in 0..$input {
-            output >>= 1;
+    ($id:expr) => {{
+        let mut output = 0b0001;
+        for _ in 0..$id {
+            output <<= 1;
         }
         output
-    };
+    }};
 }
 
 #[cfg(debug_assertions)]
@@ -298,32 +319,70 @@ pub(crate) fn list_length(len: u32) -> Result<(), DDSError> {
     quick_send_withparas(CommandTypes::ListLength(len), len as u64)
 }
 
-/// **NOTICE**: if you wanna use CSR, you have to notice that CSR is a eight-bit register
-/// but we set more than 8 bits.
+enum SerialMode {
+    SingleBit2Wire,
+    SingleBit3Wire,
+    TwoBits,
+    FourBits,
+}
+
+macro_rules! serial_mode2bits {
+    ($mode:expr) => {
+        match $mode {
+            SerialMode::SingleBit2Wire => 0b00,
+            SerialMode::SingleBit3Wire => 0b01,
+            SerialMode::TwoBits => 0b10,
+            SerialMode::FourBits => 0b11,
+        } as u16
+    };
+}
+
+/// The content to be written to CSregister, requiring an extra bit for the register address.
+/// Hence, the return is `u16`.
+/// 7:4, enable bits
+/// 3, must be 0
+/// 2:1, serial I/O mode selct
 pub fn CSR(channels: Channels) -> u16 {
     let csr = (CSRAddr as u16) << 8;
     let (ch0, ch1, ch2, ch3) = channels;
     let open = 0b0 << 3;
-    let singlebit_2wire = 0b00 << 1;
-    let singlebit_3wire = 0b01 << 1;
-    let serial_2bit = 0b10 << 1;
-    let serial_3bit = 0b11 << 1;
-
-    (csr | ch0 as u16 | ch1 as u16 | ch2 as u16 | ch3 as u16 | singlebit_2wire | MSB as u16 | open)
-        as u16
+    let serial_io_mode = serial_mode2bits!(SerialMode::SingleBit2Wire) << 1;
+    // let singlebit_3wire = serial_mode2bits!(SerialMode::SingleBit3Wire) << 1;
+    // let serial_2bit = serial_mode2bits!(SerialMode::TwoBits) << 1;
+    // let serial_3bit = serial_mode2bits!(SerialMode::ThreeBits) << 1;
+    let order = MSB as u16;
+    (csr | ch0 as u16 | ch1 as u16 | ch2 as u16 | ch3 as u16 | serial_io_mode | order | open) as u16
 }
 
+/// pump current mode enums
+enum PumpC {
+    Default75uA,
+    Cur100uA,
+    Cur125uA,
+    Cur150uA,
+}
+
+macro_rules! pump2bits {
+    ($p:expr) => {
+        match $p {
+            PumpC::Default75uA => 0b00,
+            PumpC::Cur100uA => 0b01,
+            PumpC::Cur125uA => 0b10,
+            PumpC::Cur150uA => 0b11,
+        } as u32
+    };
+}
 /// DON'T NEED u32 cast only for `fr1` id bits.max: 24bits
 pub fn FR1(pll_div: u8, mod_level: ModulationLevel) -> u32 {
-    let fr1 = (FR1Addr << 24) as u32; //Function Register 1 (FR1)—Address 0x01
+    let fr1 = FR1Addr << 24; //Function Register 1 (FR1)—Address 0x01
     let vco_gain = 0b1_u32 << 23; //0 = the low range (system clock below 160 MHz) (default).
                                   //1 = the high range (system clock above 255 MHz).
     let pll_div_c = (pll_div as u32) << 18; //If the value is 4 or 20 (decimal) or between 4 and 20, the PLL is enabled and the value sets the
                                             //multiplication factor. If the value is outside of 4 and 20 (decimal), the PLL is disabled.
-    let pump_75uA: u32 = 0b00 << 16; //00 (default) = the charge pump current is 75 μA
-    let pump_100uA: u32 = 0b01 << 16; //01 (default) = the charge pump current is 100 μA
-    let pump_125uA: u32 = 0b10 << 16; //10 (default) = the charge pump current is 125 μA
-    let pump_150uA = 0b11 << 16; //11 (default) = the charge pump current is 150 μA
+                                            // let pump_75uA = pump2bits!(PumpC::Default75uA) << 16; //00 (default) = the charge pump current is 75 μA
+                                            // let pump_100uA = pump2bits!(PumpC::Cur100uA) << 16; //01 (default) = the charge pump current is 100 μA
+                                            // let pump_125uA = pump2bits!(PumpC::Cur125uA) << 16; //10 (default) = the charge pump current is 125 μA
+    let pump = pump2bits!(PumpC::Cur150uA) << 16; //11 (default) = the charge pump current is 150 μA
     let open1 = 0b0 << 15; //open
     let ppc_conf = 0b000 << 12; //The profile pin configuration bits control the configuration of the data and SDIO_x pins for the
                                 //different modulation modes.
@@ -355,7 +414,7 @@ pub fn FR1(pll_div: u8, mod_level: ModulationLevel) -> u32 {
     //composition of the command.
     (fr1 | vco_gain
         | pll_div_c
-        | pump_150uA
+        | pump
         | open1
         | ru_rd
         | ppc_conf
@@ -454,20 +513,20 @@ pub fn CFR(
 /// f_out = FTW * f_s / 2^32, f_S = REF_CLK_RATE
 /// FTW = f_out * 2^32 / f_s
 /// NOTICE: 每个channel都有同样的这个progile registers设置，
-pub fn CFTW(freq: u32) -> u32 {
-    // let cftw = 0x04 << 32;
+pub fn CFTW(freq: u32) -> u64 {
+    let cftw = (CFTW0Addr as u64) << 32;
     // LEARN: core_clock
     // LEARN: how to get Frequency Tuning Word (FTW) from desired output freq
     let cftw_value = freq2FTW0!(freq);
-    cftw_value
+    cftw | cftw_value
 }
 
 /// NOTICE: 每个channel都有同样的这个progile registers设置，
-pub fn CPOW(phase: u32) -> u16 {
-    // let cpow = 0x05 << 16;
+pub fn CPOW(phase: u32) -> u32 {
+    let cpow = 0x05 << 16;
     let open = 0b00 << 14;
     let cpow_value = ph2CPOW0!(phase);
-    open | cpow_value
+    cpow | open | cpow_value
 }
 
 /// 24 bits + 1
@@ -591,35 +650,35 @@ pub fn CW(cwid: u8, word: u32) -> u32 {
     cw_n_value
 }
 
+macro_rules! send_via_spi {
+    ($($c:ident),+$(,)?) => {
+        $(
+            direct_spi($c as u64);
+        )*
+    };
+}
+
 pub fn init_viaSPI(pll_div: u8, afp: AFPSelector, mod_lvl: ModulationLevel, send: bool) {
     let csr_spi = (CSR((1, 1, 1, 1)) as u64) << 40;
-    let fr1_spi = (FR1(pll_div, ModulationLevel::Two) as u64);
+    let fr1_spi = FR1(pll_div, ModulationLevel::Two) as u64;
     let fr2_spi = FR2();
     let cfr_spi = CFR(afp, false, false, false);
     if send {
-        // direct_spi(CSRAddr, csr_spi as u64);
-        // direct_spi(FR1Addr, fr1_spi as u64);
-        // direct_spi(FR2Addr, fr2_spi as u64);
-        // direct_spi(CFRAddr, cfr_spi as u64);
-        direct_spi(csr_spi as u64);
-        direct_spi(fr1_spi as u64);
-        direct_spi(fr2_spi as u64);
-        direct_spi(cfr_spi as u64);
+        send_via_spi!(csr_spi, fr1_spi, fr2_spi, cfr_spi);
     }
-    // TODO: what should be return?a
 }
 
-pub fn set_frequency(channel: u8, freq: u32, send: bool) -> Result<u64, DDSError> {
+pub fn set_frequency(channel: u8, freq: u32, send: bool) -> u64 {
     let csr_spi: u64 = (CSR(channels_frombits!(channel)) as u64) << 40;
     let cftw_spi = CFTW(freq) as u64;
     let freq_cmd = (csr_spi | cftw_spi) as u64;
     if send {
         direct_spi(freq_cmd);
     }
-    Ok(freq_cmd)
+    freq_cmd
 }
 
-pub fn set_amplitude(channel: u8, amp: u32, send: bool) -> Result<u64, DDSError> {
+pub fn set_amplitude(channel: u8, amp: u32, send: bool) -> u64 {
     let csr_spi: u64 = (CSR(channels_frombits!(channel)) as u64) << 32;
     if amp > 1024 {
         log_func!(red:"max amplitude 1023, clamped");
@@ -629,10 +688,13 @@ pub fn set_amplitude(channel: u8, amp: u32, send: bool) -> Result<u64, DDSError>
     if send {
         direct_spi(amp_cmd);
     }
-    Ok(amp_cmd)
+    amp_cmd
 }
 
-pub fn set_phase(channel: u8, phase: u32, send: bool) -> Result<u64, DDSError> {
+/// channel: is a `u8` with 4 high bits are 0, indicating the status of each channel
+/// for example, channel = `0b1101` => channel 0,1,3 are enable.
+/// phase: phase in degree, max = 360, min = 360 / 2^14
+pub fn set_phase(channel: u8, phase: u32, send: bool) -> u64 {
     let csr_spi: u64 = (CSR(channels_frombits!(channel)) as u64) << 24;
     if phase > 360 {
         log_func!(red:"max phase 360, clamped");
@@ -642,7 +704,397 @@ pub fn set_phase(channel: u8, phase: u32, send: bool) -> Result<u64, DDSError> {
     if send {
         direct_spi(phase_cmd);
     }
-    Ok(phase_cmd)
+    phase_cmd
+}
+
+/// change between levels is made via **profile pins** (chX->PinX)
+/// 2-level modulation is the default mode
+/// ch2B2mod: channels to be the 2-level modulation
+pub fn set_2mod_freq(chs2B2set: u8, freq: u32, send: bool) -> (u64, u64, u64) {
+    let csr_spi = CSR(channels_frombits!(chs2B2set)) as u64;
+    set_afp_select(AFPSelector::FreqModulation);
+    let afp = AFPSelector::FreqModulation;
+    let cfr_spi = CFR(afp, false, false, false) as u64;
+    let cw_spi = CW(1, freq) as u64;
+    if send {
+        send_via_spi!(csr_spi, cfr_spi, cw_spi,);
+    }
+    (csr_spi, cfr_spi, cw_spi)
+}
+
+pub fn set_2mod_amp(chs2B2set: u8, amp: u32, send: bool) -> (u64, u64, u64) {
+    let csr_spi = CSR(channels_frombits!(chs2B2set)) as u64;
+    set_afp_select(AFPSelector::AmpModulation);
+    let afp = AFPSelector::AmpModulation;
+    let cfr_spi = CFR(afp, false, false, false) as u64;
+    let cw_spi = CW(1, amp) as u64;
+    if send {
+        send_via_spi!(csr_spi, cfr_spi, cw_spi);
+    }
+    (csr_spi, cfr_spi, cw_spi)
+}
+pub fn set_2mod_phase(chs2B2set: u8, phase: u32, send: bool) -> (u64, u64, u64) {
+    let csr_spi = CSR(channels_frombits!(chs2B2set)) as u64;
+    set_afp_select(AFPSelector::PhaseModulation);
+    let afp = AFPSelector::PhaseModulation;
+    let cfr_spi = CFR(afp, false, false, false) as u64;
+    let cw_spi = CW(1, phase) as u64;
+    if send {
+        send_via_spi!(csr_spi, cfr_spi, cw_spi);
+    }
+    (csr_spi, cfr_spi, cw_spi)
+}
+
+macro_rules! tou8 {
+    ($x:expr) => {
+        ($x & 0xff) as u8
+    };
+}
+macro_rules! tou16 {
+    ($x:expr) => {
+        ($x & 0xffff) as u16
+    };
+}
+
+/// channel: channel(s) to be changed
+/// r_time: ramp time **in milliseconds**
+/// f_init: start frequency of the ramp, **in Hz**, max = clock x PLL, min = (clock x PLL) / 2^32
+/// f_final: end frequency of the ramp, **in Hz**, max = clock x PLL, min = (clock x PLL) / 2^32
+pub fn ramp_freq(
+    channel: u8,
+    time_step: Duration,
+    f_init: u32,
+    f_final: u32,
+    send: bool,
+) -> Result<(u64, u64, u64, u64, u64, u64, u64), DDSError> {
+    let clk = sys_clk_rate!();
+
+    if f_init > f_final {
+        log_func!(on_red:"init frequency should be less than final frequency");
+        return Err(DDSError::IllegalArgument);
+    }
+
+    if f_init > clk || f_final > clk {
+        eprintln!(
+            "{}{}",
+            "Max frequency is ".on_red(),
+            clk.to_string().on_bright_green(),
+        );
+        return Err(DDSError::IllegalArgument);
+    }
+
+    let frange = f_final - f_init;
+    let delta_f_Min_hz = (sys_clk_rate!() as f64 / 2.0f64.powf(32.0));
+
+    // the samples nums of **minimum** ramp time interval
+    let n_samples_tmin = time_step.div_duration_f64(MinRampInterval) as u64;
+
+    // the samples nums of **minimun** frequncy delta(min steplen, most steps)
+    let n_samples_fmin = (frange as f64 / delta_f_Min_hz) as u64;
+
+    // RR interval starts with `r_time / n_samples_fmin (the most steps case)`
+    let mut delta_time = time_step.as_nanos() / (n_samples_fmin as u128);
+    let mut delta_f = frange as f64 / n_samples_tmin as f64;
+
+    if (frange as f64) < delta_f_Min_hz {
+        eprintln!(
+            "{}{}",
+            "Ramp step too short, min step is".on_red(),
+            delta_f_Min_hz.to_string().on_bright_green()
+        );
+        return Err(DDSError::IllegalArgument);
+    }
+
+    if delta_time > MaxRampInterval.as_nanos() {
+        eprintln!(
+            "{}{:?}",
+            "Ramp time is too long, max time step is ".on_red(),
+            MaxRampInterval
+        );
+        return Err(DDSError::IllegalArgument);
+    }
+
+    if time_step < MinRampInterval {
+        eprintln!(
+            "{}{:?}",
+            "Ramp time is too short, min time step is ".on_red(),
+            MinRampInterval
+        );
+        return Err(DDSError::IllegalArgument);
+    }
+
+    let n_samples = if delta_f < delta_f_Min_hz && delta_time > MinRampInterval.as_nanos() {
+        delta_f = delta_f_Min_hz;
+        let n_samples = n_samples_fmin;
+        n_samples
+        // FIXME: is here really `&&` ?
+    } else if delta_f > delta_f_Min_hz && delta_time < MinRampInterval.as_nanos() {
+        delta_time = MinRampInterval.as_nanos();
+        let n_samples = n_samples_tmin;
+        n_samples
+    } else {
+        log_func!(purple:"Shouldn't reached here!");
+        n_samples_fmin.min(n_samples_tmin)
+    };
+
+    let delta_time = delta_time as u64; // re-cast.
+    let delta_time_dur = Duration::from_nanos(delta_time);
+    println!("ramp time rate (time interval) is {:?}", delta_time_dur);
+    println!("ramp value rate (freq delta) is {}", delta_f);
+    println!("number of samples: {}", n_samples);
+    println!(
+        " total time: {}, total change {}",
+        n_samples * delta_time,
+        n_samples as f64 * delta_f
+    );
+
+    set_afp_select(AFPSelector::FreqModulation);
+    let delta_time = tou16!(delta_time);
+    let csr_spi = CSR(channels_frombits!(channel)) as u64;
+    let lsrr_spi = LSRR(delta_time as u32, delta_time as u32) as u64;
+    // BUG: delta_f 精度到底多少,现在这样转换肯定全0
+    let fdw_spi = FDW(delta_f as u32) as u64;
+    let rdw_spi = RDW(delta_f as u32) as u64;
+    let cfr_spi = CFR(AFPSelector::FreqModulation, false, true, false) as u64;
+    let cftw_spi = CFTW(f_init);
+    let cw_spi = CW(1, f_final) as u64;
+
+    if send {
+        send_via_spi!(csr_spi, lsrr_spi, fdw_spi, rdw_spi, cfr_spi, cftw_spi, cw_spi);
+    }
+    log_func!();
+    Ok((
+        csr_spi, lsrr_spi, fdw_spi, rdw_spi, cfr_spi, cftw_spi, cw_spi,
+    ))
+}
+
+// NOTICE: 阅读具体DAC参数
+/// it matters that the amplitude is with the unit `percent`.
+/// **ratio of DAC's full-scale current**,
+pub fn ramp_amp(
+    channel: u8,
+    time_step: Duration,
+    a_init: u32,
+    a_final: u32,
+    send: bool,
+) -> Result<(u64, u64, u64, u64, u64, u64, u64), DDSError> {
+    let clk = sys_clk_rate!();
+
+    if a_init > a_final {
+        log_func!(on_red:"init amplitude should be less than final frequency");
+        return Err(DDSError::IllegalArgument);
+    }
+
+    if a_init > clk || a_final > clk {
+        log_func!(on_red:
+            "Max Amplitude is 1023"
+        );
+        return Err(DDSError::IllegalArgument);
+    }
+    let arange = a_final - a_init;
+    let delta_a_Min_dac = 1.0;
+
+    // the samples nums of **minimum** ramp time interval
+    let n_samples_tmin = time_step.div_duration_f64(MinRampInterval) as u64;
+
+    // the samples nums of **minimun** frequncy delta(min steplen, most steps)
+    let n_samples_amin = (arange as f64 / delta_a_Min_dac) as u64;
+
+    // RR interval starts with `r_time / n_samples_fmin (the most steps case)`
+    let mut delta_time = time_step.as_nanos() / (n_samples_amin as u128);
+    let mut delta_a = arange as f64 / n_samples_tmin as f64;
+
+    if (arange as f64) < delta_a_Min_dac {
+        eprintln!(
+            "{}{}",
+            "Ramp step too short, min step is".on_red(),
+            delta_a_Min_dac.to_string().on_bright_green()
+        );
+        return Err(DDSError::IllegalArgument);
+    }
+
+    if delta_time > MaxRampInterval.as_nanos() {
+        eprintln!(
+            "{}{:?}",
+            "Ramp time is too long, max time step is ".on_red(),
+            MaxRampInterval
+        );
+        return Err(DDSError::IllegalArgument);
+    }
+
+    if time_step < MinRampInterval {
+        eprintln!(
+            "{}{:?}",
+            "Ramp time is too short, min time step is ".on_red(),
+            MinRampInterval
+        );
+        return Err(DDSError::IllegalArgument);
+    }
+
+    let n_samples = if delta_a < delta_a_Min_dac && delta_time > MinRampInterval.as_nanos() {
+        delta_a = delta_a_Min_dac;
+        let n_samples = n_samples_amin;
+        n_samples
+        // FIXME: is here really `&&` ?
+    } else if delta_a > delta_a_Min_dac && delta_time < MinRampInterval.as_nanos() {
+        delta_time = MinRampInterval.as_nanos();
+        let n_samples = n_samples_tmin;
+        n_samples
+    } else {
+        log_func!(purple:"Shouldn't reached here!");
+        n_samples_amin.min(n_samples_tmin)
+    };
+
+    let delta_time = delta_time as u64; // re-cast.
+    let delta_time_dur = Duration::from_nanos(delta_time);
+    println!("ramp time rate (time interval) is {:?}", delta_time_dur);
+    println!(
+        "ramp value rate (amplitude delta) is {} of DAC full-scale",
+        delta_a
+    );
+    println!("number of samples: {}", n_samples);
+    println!(
+        " total time: {}, total change {}",
+        n_samples * delta_time,
+        n_samples as f64 * delta_a
+    );
+
+    set_afp_select(AFPSelector::AmpModulation);
+    let delta_time = tou16!(delta_time);
+    let csr_spi = CSR(channels_frombits!(channel)) as u64;
+    let lsrr_spi = LSRR(delta_time as u32, delta_time as u32) as u64;
+    let fdw_spi = FDW(delta_a as u32) as u64;
+    let rdw_spi = RDW(delta_a as u32) as u64;
+    let cfr_spi = CFR(AFPSelector::AmpModulation, false, true, false) as u64;
+    let cftw_spi = CFTW(a_init);
+    let cw_spi = CW(1, a_final) as u64;
+
+    if send {
+        send_via_spi!(csr_spi, lsrr_spi, fdw_spi, rdw_spi, cfr_spi, cftw_spi, cw_spi);
+    }
+    log_func!();
+    Ok((
+        csr_spi, lsrr_spi, fdw_spi, rdw_spi, cfr_spi, cftw_spi, cw_spi,
+    ))
+}
+
+// NOTICE: 阅读具体DAC参数
+/// it matters that the amplitude is with the unit `percent`.
+/// **ratio of DAC's full-scale current**,
+pub fn ramp_phase(
+    channel: u8,
+    time_step: Duration,
+    // TODO improve the solution, use f32 instead.
+    p_initf: f64,
+    p_finalf: f64,
+    send: bool,
+) -> Result<(u64, u64, u64, u64, u64, u64, u64), DDSError> {
+    let p_init = p_initf as u32;
+    let p_final = p_finalf as u32;
+    let clk = sys_clk_rate!();
+
+    if p_initf > p_finalf {
+        log_func!(on_red:"init frequency should be less than final frequency");
+        return Err(DDSError::IllegalArgument);
+    }
+
+    if p_initf > 360.0 || p_finalf > 360.0 {
+        log_func!(on_red:"MAX degree of phase is 360.0");
+        return Err(DDSError::IllegalArgument);
+    }
+    let prangeu = p_final - p_init;
+    let prange = p_finalf - p_initf;
+    let delta_p_min = (360.0) / (2.0f64.powf(14.0));
+
+    // the samples nums of **minimum** ramp time interval
+    let n_samples_tmin = time_step.div_duration_f64(MinRampInterval) as u64;
+
+    // the samples nums of **minimun** frequncy delta(min steplen, most steps)
+    let n_samples_pmin = (prangeu as f64 / delta_p_min) as u64;
+
+    // RR interval starts with `r_time / n_samples_fmin (the most steps case)`
+    let mut delta_time = time_step.as_nanos() / (n_samples_pmin as u128);
+    let mut delta_p = prange / n_samples_tmin as f64;
+
+    if prange < delta_p_min {
+        eprintln!(
+            "{}{}",
+            "Ramp step too short, min step is".on_red(),
+            delta_p_min.to_string().on_bright_green()
+        );
+        return Err(DDSError::IllegalArgument);
+    }
+
+    if delta_time > MaxRampInterval.as_nanos() {
+        eprintln!(
+            "{}{:?}",
+            "Ramp time is too long, max time step is ".on_red(),
+            MaxRampInterval
+        );
+        return Err(DDSError::IllegalArgument);
+    }
+
+    if time_step < MinRampInterval {
+        eprintln!(
+            "{}{:?}",
+            "Ramp time is too short, min time step is ".on_red(),
+            MinRampInterval
+        );
+        return Err(DDSError::IllegalArgument);
+    }
+
+    let n_samples = if delta_p < delta_p_min && delta_time > MinRampInterval.as_nanos() {
+        delta_p = delta_p_min;
+        let n_samples = n_samples_pmin;
+        n_samples
+        // FIXME: is here really `&&` ?
+    } else if delta_p > delta_p_min && delta_time < MinRampInterval.as_nanos() {
+        delta_time = MinRampInterval.as_nanos();
+        let n_samples = n_samples_tmin;
+        n_samples
+    } else {
+        log_func!(purple:"Shouldn't reached here!");
+        n_samples_pmin.min(n_samples_tmin)
+    };
+
+    let delta_time = delta_time as u64; // re-cast.
+    let delta_time_dur = Duration::from_nanos(delta_time);
+    println!("ramp time rate (time interval) is {:?}", delta_time_dur);
+    println!(
+        "ramp value rate (amplitude delta) is {} of DAC full-scale",
+        delta_p
+    );
+    println!("number of samples: {}", n_samples);
+    println!(
+        " total time: {}, total change {}",
+        n_samples * delta_time,
+        n_samples as f64 * delta_p
+    );
+
+    set_afp_select(AFPSelector::PhaseModulation);
+    let delta_time = tou16!(delta_time);
+    let csr_spi = CSR(channels_frombits!(channel)) as u64;
+    let lsrr_spi = LSRR(delta_time as u32, delta_time as u32) as u64;
+    // BUG: solution is : using u32  causes 0
+    let fdw_spi = FDW(delta_p as u32) as u64;
+    let rdw_spi = RDW(delta_p as u32) as u64;
+    let cfr_spi = CFR(AFPSelector::PhaseModulation, false, true, false) as u64;
+    let cftw_spi = CFTW(p_init);
+    let cw_spi = CW(1, p_final) as u64;
+
+    if send {
+        send_via_spi!(csr_spi, lsrr_spi, fdw_spi, rdw_spi, cfr_spi, cftw_spi, cw_spi);
+    }
+    log_func!();
+    Ok((
+        csr_spi, lsrr_spi, fdw_spi, rdw_spi, cfr_spi, cftw_spi, cw_spi,
+    ))
+}
+
+pub fn begin_with_one(command: DataStream) {}
+
+pub fn begin_with_command_serial() {
+    quick_gen_binary();
 }
 
 #[test]
