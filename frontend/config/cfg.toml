@@ -1,7 +1,7 @@
 
 # cfg.toml enables you to easily set command to MCU:
 
-# 1. command_name = "setinput", [paras] field is need
+# 1. command_name = "input", [paras] field is need
 # 2. command_name = "report", "poweroff", "reset" ...
 # 3. NOTICE: if command_name = "ramp", you should use `ddsc scan <args>`, instead of cfg.toml
 

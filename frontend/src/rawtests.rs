@@ -13,20 +13,20 @@ use config::{Config, File};
 // }
 
 #[test]
-fn set_input_works() {
-    let mut input = Input::default();
+fn set_ddsinput_works() {
+    let mut dds_input = DDSInput::default();
     let freq = 114514.3;
     let vol = 3000f32;
     let phase = 90;
-    input.set_input(freq, vol, phase);
-    if let Ok(msg) = serde_json::to_string(&input) {
+    dds_input.set(freq, vol, phase);
+    if let Ok(msg) = serde_json::to_string(&dds_input) {
         println!("\t\t serde_json::tostring(input) is into {msg}");
     }
 }
 
 #[test]
 fn data_packaging_from_input() {
-    let input = Input::from((114513.3, 3000_f32, 90));
+    let input = DDSInput::from((114513.3, 3000_f32, 90));
     let datapackage = DataPacket::from(input);
 }
 
@@ -65,7 +65,7 @@ fn str2cmd_works() {
 #[test]
 fn unsafe_try_send_str() {
     send_msg("TRY SENT".to_string());
-    let input = Input::from((114514.3, 2333_f32, 150));
+    let input = DDSInput::from((114514.3, 2333_f32, 150));
     unsafe {
         let input_str = serde_json::to_string(&input).unwrap_unchecked();
         if let Ok(_) = try_send(input_str) {
@@ -76,7 +76,7 @@ fn unsafe_try_send_str() {
 
 #[test]
 fn read_datapkg_from_cfg() {
-    let input = Input::from_config(LOCAL_CFG_PATH);
+    let input = DDSInput::from_config(LOCAL_CFG_PATH);
     let datapkg = DataPacket::default();
     let datapkg_from_input = DataPacket::from(input);
     assert_ne!(datapkg, datapkg_from_input);

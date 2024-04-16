@@ -282,7 +282,7 @@ pub fn setinput_dds() -> Result<(), DDSError> {
         .add_source(File::with_name(LOCAL_CFG_PATH))
         .build();
     match builder {
-        Ok(paras) => match paras.try_deserialize::<Input>() {
+        Ok(paras) => match paras.try_deserialize::<DDSInput>() {
             Ok(input) => {
                 let datapkg = DataPacket::from(input);
                 log_func!(on_bright_cyan:"41");
@@ -300,7 +300,7 @@ pub fn setinput_dds() -> Result<(), DDSError> {
     }
 }
 
-pub(crate) fn direct_spi(
+pub(crate) fn spi(
     // reg_id: u8,
     data: u64,
 ) {
@@ -308,7 +308,7 @@ pub(crate) fn direct_spi(
     // add the register address
     // match reg_id: ... u24, u16, u32, ...
     // let paras = (reg_id as u64) << 24 | data;
-    let Ok(_) = quick_send_withparas(CommandTypes::DirectSPI, data) else {
+    let Ok(_) = quick_send_withparas(CommandTypes::SPI, data) else {
         log_func!(on_red:"Failed to send via direct SPI");
         return;
     };
@@ -653,7 +653,7 @@ pub fn CW(cwid: u8, word: u32) -> u32 {
 macro_rules! send_via_spi {
     ($($c:ident),+$(,)?) => {
         $(
-            direct_spi($c as u64);
+            spi($c as u64);
         )*
     };
 }
@@ -673,7 +673,7 @@ pub fn set_frequency(channel: u8, freq: u32, send: bool) -> u64 {
     let cftw_spi = CFTW(freq) as u64;
     let freq_cmd = (csr_spi | cftw_spi) as u64;
     if send {
-        direct_spi(freq_cmd);
+        spi(freq_cmd);
     }
     freq_cmd
 }
@@ -686,7 +686,7 @@ pub fn set_amplitude(channel: u8, amp: u32, send: bool) -> u64 {
     let acr_spi = ACR(true, amp) as u64;
     let amp_cmd = (csr_spi | acr_spi) as u64;
     if send {
-        direct_spi(amp_cmd);
+        spi(amp_cmd);
     }
     amp_cmd
 }
@@ -702,7 +702,7 @@ pub fn set_phase(channel: u8, phase: u32, send: bool) -> u64 {
     let cph_spi = CPOW(phase) as u64;
     let phase_cmd = (csr_spi | cph_spi) as u64;
     if send {
-        direct_spi(phase_cmd);
+        spi(phase_cmd);
     }
     phase_cmd
 }

@@ -8,7 +8,7 @@ local wifi_helper = {}
 
 local scan_result = {}
 
-SCREEN_PLACEHOLDER = require "screen0"
+SCREEN_PLACEHOLDER = require "luatos.utils.screen0"
 
 
 

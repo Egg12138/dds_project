@@ -3,7 +3,7 @@
 //! including the majority of the system logic.
 #![allow(unused_variables, unused_features, unused_imports, dead_code)]
 
-use crate::config::{CommandTypes, Input};
+use crate::config::{CommandTypes, DDSInput};
 use crate::data::{quick_cmd2datapkg_no_paras, quick_send_noparas, send_datapkg, send_msg};
 use colored::Colorize;
 use core::panic;

@@ -1,7 +1,9 @@
+
 sys = require("sys")
-rtchelper = require("rtchelper")
-wifihelper = require("wifi-utils")
-httphelper = require("http-utils")
+-- LUATOS SoC will recursively scan all files under the directory
+local rtchelper = require("rtchelper")
+local httphelper = require("http-utils")
+local wifi = require("wifi-manager")
 local checker = {}
 
 function checker.rtc_checks()
@@ -46,11 +48,7 @@ end
 
 
 function checker.wifi_checks()
-  -- LEARN wifi configuration check
-  -- LEARN wifi status check 
-  wifihelper.setup(wlan.STATION, true)
-  wifihelper.wifi_test()
-
+  wifi.init()
 end
 
 

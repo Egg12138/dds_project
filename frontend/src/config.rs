@@ -132,13 +132,13 @@ impl MCU {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum CommandTypes {
-    SetInput,
+    Input,
     PowerOff,
     Scan,
     Report, // check
     Reset,
     Update,
-    DirectSPI,
+    SPI,
     ListMode,
     ListLength(u32),
     ListReset,
@@ -150,12 +150,12 @@ pub enum CommandTypes {
 impl std::fmt::Display for CommandTypes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::SetInput => write!(f, "setinput"),
+            Self::Input => write!(f, "input"),
             Self::PowerOff => write!(f, "poweroff"),
             Self::Scan => write!(f, "scan"),
             Self::Report => write!(f, "report"),
             Self::Reset => write!(f, "reset"),
-            Self::DirectSPI => write!(f, "direct SPI"),
+            Self::SPI => write!(f, "direct SPI"),
             Self::ListLength(len) => write!(f, "set list length to {}", *len),
             Self::ListReset => write!(f, "reset list"),
             Self::ListMode => write!(f, "list mode"),
@@ -169,12 +169,12 @@ impl std::fmt::Display for CommandTypes {
 impl From<&str> for CommandTypes {
     fn from(value: &str) -> Self {
         match value {
-            "setinput" => CommandTypes::SetInput,
+            "input" => CommandTypes::Input,
             "poweroff" => CommandTypes::PowerOff,
             "scan" => CommandTypes::Scan,
             "report" => CommandTypes::Report,
             "reset" => CommandTypes::Reset,
-            "direct_spi" => CommandTypes::DirectSPI,
+            "spi" => CommandTypes::SPI,
             "list_mode" => CommandTypes::ListMode,
             "list_reset" => CommandTypes::ListReset,
             "sync" => CommandTypes::Sync,
@@ -192,7 +192,7 @@ impl From<&str> for CommandTypes {
 /// but `quick_Watcher` is a faster way to sending messages.
 #[repr(C)]
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub(crate) struct Input {
+pub(crate) struct DDSInput {
     pub command_name: CommandTypes,
     pub paras: Paras,
     // pub collect: bool,
@@ -221,7 +221,7 @@ impl Paras {
     }
 }
 
-impl Default for Input {
+impl Default for DDSInput {
     /// read from cfg.toml, or else return the default inputs.
     fn default() -> Self {
         if let Ok(cfg) = Config::builder()
@@ -229,7 +229,7 @@ impl Default for Input {
             .build()
         {
             return cfg
-                .try_deserialize::<Input>()
+                .try_deserialize::<DDSInput>()
                 .expect("Deserialization failed!");
         }
 
@@ -240,8 +240,8 @@ impl Default for Input {
                 .bold()
         );
 
-        Input {
-            command_name: CommandTypes::SetInput,
+        DDSInput {
+            command_name: CommandTypes::Input,
             paras: Paras {
                 freq_hz: 0_f64,
                 vol_mv: 0_f32,
@@ -251,10 +251,10 @@ impl Default for Input {
     }
 }
 
-impl From<(f64, f32, u8)> for Input {
+impl From<(f64, f32, u8)> for DDSInput {
     fn from(value: (f64, f32, u8)) -> Self {
-        Input {
-            command_name: CommandTypes::SetInput,
+        DDSInput {
+            command_name: CommandTypes::Input,
             paras: Paras {
                 freq_hz: value.0,
                 vol_mv: value.1,
@@ -263,7 +263,7 @@ impl From<(f64, f32, u8)> for Input {
         }
     }
 }
-impl From<Config> for Input {
+impl From<Config> for DDSInput {
     fn from(value: Config) -> Self {
         value.try_deserialize().unwrap_or_else(|e| {
             eprintln!("{e}");
@@ -274,7 +274,7 @@ impl From<Config> for Input {
 }
 
 #[allow(unused)]
-impl Input {
+impl DDSInput {
     #[deprecated]
     fn _syslevel_path() -> &'static str {
         #[cfg(target_family = "windows")]
@@ -291,18 +291,18 @@ impl Input {
             builder.try_deserialize().unwrap_or_default()
         } else {
             eprintln!("failed to build config from the {}", path);
-            Input::default()
+            DDSInput::default()
         }
     }
 
-    pub(crate) fn set_input(&mut self, f: f64, v: f32, p: u8) {
+    pub(crate) fn set(&mut self, f: f64, v: f32, p: u8) {
         self.paras.set(f, v, p);
     }
 
     fn handle(&mut self) {
         let cfgmap = CFG.read().unwrap().clone();
-        let input = Input::from(cfgmap);
-        self.set_input(input.freq(), input.vol(), input.phase());
+        let input = DDSInput::from(cfgmap);
+        self.set(input.freq(), input.vol(), input.phase());
         self.command_name = input.command_name;
 
         println!(
@@ -401,7 +401,7 @@ pub(crate) fn show() {
         CFG.read()
             .unwrap()
             .clone()
-            .try_deserialize::<Input>()
+            .try_deserialize::<DDSInput>()
             .unwrap_or_default()
     );
 }
@@ -445,7 +445,7 @@ fn watch() {
                     .refresh()
                     .unwrap()
                     .clone()
-                    .try_deserialize::<Input>()
+                    .try_deserialize::<DDSInput>()
                     .unwrap_or_default();
                 if input.valid_input() {
                     data::send_msg(serde_json::to_string_pretty(&input).unwrap_or_default());
@@ -472,7 +472,7 @@ pub fn write_to_cfg() {
         .build();
     assert!(builder.is_ok());
     let settings = builder.unwrap();
-    assert!(settings.try_deserialize::<Input>().is_ok());
+    assert!(settings.try_deserialize::<DDSInput>().is_ok());
 }
 
 #[test]
@@ -482,7 +482,7 @@ fn config_demo() {
         .build();
 
     if let Ok(settings) = builder {
-        assert!(settings.try_deserialize::<Input>().is_ok());
+        assert!(settings.try_deserialize::<DDSInput>().is_ok());
     }
 }
 

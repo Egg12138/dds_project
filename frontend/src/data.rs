@@ -27,9 +27,7 @@ use serde::{self, Deserialize, Serialize};
 use serde_json::json;
 use std::fmt::Display;
 use std::result::Result;
-use std::sync;
 
-pub const NUM_CMDS_NOPARAS: usize = 9;
 pub const CMDNAMES: [&str; 12] = [
     "poweroff",
     "reset",
@@ -40,9 +38,9 @@ pub const CMDNAMES: [&str; 12] = [
     "list_reset",
     "list_mode",
     "init",
-    "setinput",    //with paras
+    "input",       //with paras
     "list_length", // with paras
-    "direct_spi",  //with paras
+    "spi",         //with paras
 ];
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
@@ -82,7 +80,7 @@ impl Default for DataPacket {
         );
 
         DataPacket {
-            command_name: CommandTypes::SetInput,
+            command_name: CommandTypes::Input,
             paras: Some(Paras::new(0f64, 0f32, 0)),
             request_id: 0,
         }
@@ -111,8 +109,8 @@ impl TryFrom<&str> for DataPacket {
         if !CMDNAMES.contains(&value) {
             eprintln!("{value} is not a valid command_name");
             Err(DDSError::IllegalArgument)
-        } else if value == "scan" || value == "setinput" {
-            log_func!(on_red:"does not support with-paras-command setinput/ramp .");
+        } else if value == "scan" || value == "input" {
+            log_func!(on_red:"does not support with-paras-command input/ramp .");
             Err(DDSError::ConvertionError)
         } else {
             Ok(DataPacket {
@@ -124,9 +122,9 @@ impl TryFrom<&str> for DataPacket {
     }
 }
 
-impl From<cfg::Input> for DataPacket {
+impl From<cfg::DDSInput> for DataPacket {
     /// from , request_id = 1
-    fn from(value: cfg::Input) -> Self {
+    fn from(value: cfg::DDSInput) -> Self {
         let command_name = value.command_name();
         let freq_hz = value.freq();
         let vol_mv = value.vol();
@@ -279,19 +277,19 @@ pub(crate) fn quick_cmd2data(cmd: CommandTypes) -> DataPacket {
 
 #[deprecated(since = "0.1.4", note = "use macro-based version instead")]
 pub(crate) fn _quick_cmd2data_without_paras(cmd: &CommandTypes) -> Result<DataPacket, DDSError> {
-    /// an easy way to get DataPacket from the given CommandTypes
+    // an easy way to get DataPacket from the given CommandTypes
     match *cmd {
         CommandTypes::PowerOff => match_cmd!(PowerOff),
         CommandTypes::Report => match_cmd!(Report),
         CommandTypes::Scan => match_cmd!(Scan),
         CommandTypes::Update => match_cmd!(Update),
-        CommandTypes::DirectSPI => match_cmd!(DirectSPI),
+        CommandTypes::SPI => match_cmd!(SPI),
         CommandTypes::Init => match_cmd!(Init),
         CommandTypes::ListMode => match_cmd!(ListMode),
         CommandTypes::ListReset => match_cmd!(ListReset),
         CommandTypes::Reset => match_cmd!(Reset),
         CommandTypes::Sync => match_cmd!(Sync),
-        CommandTypes::SetInput | CommandTypes::ListLength(_) => {
+        CommandTypes::Input | CommandTypes::ListLength(_) => {
             log_func!(on_red:"doest not support with-paras-commands (fix in next edition)");
             Err(DDSError::IllegalArgument)
         }
@@ -300,8 +298,8 @@ pub(crate) fn _quick_cmd2data_without_paras(cmd: &CommandTypes) -> Result<DataPa
 
 pub(crate) fn quick_cmd2datapkg_no_paras(cmd: &CommandTypes) -> Result<DataPacket, DDSError> {
     match_allcmds!(
-        cmd => PowerOff, Report, Scan, Update, DirectSPI, Init, ListMode, ListReset, Reset, Sync,
-        SetInput,
+        cmd => PowerOff, Report, Scan, Update, SPI, Init, ListMode, ListReset, Reset, Sync,
+        Input,
     )
 }
 
@@ -320,7 +318,7 @@ macro_rules! match_str_cmds {
 pub(crate) fn str2cmd(cmdstr: &str) -> Result<CommandTypes, DDSError> {
     match_str_cmds!(cmdstr;
         "poweroff", "report", "scan", "update", 
-        "directspi", "init", "listmode", "listreset", "sync", => PowerOff, Report, Scan, Update, DirectSPI, Init, ListMode, ListReset, Sync,)
+        "directspi", "init", "listmode", "listreset", "sync", => PowerOff, Report, Scan, Update, SPI, Init, ListMode, ListReset, Sync,)
 }
 
 /// an easy way to send command from command name (as &str)
