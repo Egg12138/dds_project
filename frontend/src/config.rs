@@ -38,12 +38,43 @@ lazy_static! {
             .unwrap();
         configuration
     });
+
+
+    pub static ref MCU_SOLID: MCU = {
+    let s = Config::builder()
+            .add_source(File::with_name(LOCAL_MCU_CFG_PATH))
+            .add_source(File::with_name(DEFAULT_MCU_CFG_PATH).required(false))
+            // add in cfgs from the environment (with a prefix of DDS)
+            .add_source(Environment::with_prefix(ENV_PREFIX))
+            .build().unwrap_or_else(
+                {
+                    |e| {
+                        eprintln!("failed to parse, use the deault config: {}", e);
+                    config::Config::default()
+                    }
+                }
+            );
+        println!("[Lazy_static MCU::new] debug: {:?}", s.get_bool("debug"));
+        log_func!("MCU server IP", s.get::<String>("connection.ip"));
+        log_func!("table: ", s.get_table("iot"));
+        // println!("[MCU::new] table: {:?}", s.get_table("iot"));
+        log_func!("done");
+        s.try_deserialize().unwrap_or_else( {
+            |e| {
+            log_func!(on_bright_red:"MCU config decoded error, use the default configurations");
+            eprintln!("{}", e);
+            MCU::default()
+            }
+        })
+
+    };
+
 }
 
 /// Parse json field string as IPv4,
 #[repr(C)]
 #[derive(Debug, Deserialize)]
-pub(crate) struct MCU {
+pub struct MCU {
     debug: bool,
     connection: Connection,
     iot: IoT,
@@ -54,6 +85,7 @@ pub(crate) struct MCU {
 #[derive(Debug, Deserialize)]
 struct Connection {
     ip: Ipv4Addr,
+    port: u16,
     pwd: String,
     // mode: CommunicationMethod,
     retry: u32,
@@ -65,12 +97,31 @@ struct Connection {
 #[allow(unused)]
 #[derive(Debug, Deserialize)]
 struct IoT {
-    public_key: String,
-    private_key: String,
+    device_id: String,
+    device_secret: String,
 }
 
-#[allow(unused)]
+impl Default for MCU {
+    fn default() -> Self {
+        MCU {
+            debug: false,
+            connection: Connection {
+                ip: Ipv4Addr::new(127, 0, 0, 1),
+                port: 8080,
+                pwd: "".to_string(),
+                retry: 5,
+                retry_interval: 1.0,
+            },
+            iot: IoT {
+                device_secret: "660d43201b5757626c1b700f_0403demo".to_string(),
+                device_id: "liyuan11328".to_string(),
+            },
+        }
+    }
+}
+
 impl MCU {
+    #[deprecated(since = "0.1.8", note = "use `MCU_SOLID` or `MCU::default()` instead")]
     pub(crate) fn new() -> Result<Self, DDSError> {
         let s = Config::builder()
             .add_source(File::with_name(LOCAL_MCU_CFG_PATH))
@@ -83,7 +134,7 @@ impl MCU {
         //     "[MCU::new] private key: {:?}",
         //     s.get::<String>("connection.ip")
         // );
-        log_func!("private key", s.get::<String>("connection.ip"));
+        log_func!("device_id", s.get::<String>("connection.ip"));
         log_func!("table: ", s.get_table("iot"));
         // println!("[MCU::new] table: {:?}", s.get_table("iot"));
         log_func!("done");
@@ -101,17 +152,17 @@ impl MCU {
     // }
 
     #[deprecated]
-    pub(crate) fn pub_key(&self) -> &String {
-        &self.iot.public_key
+    pub(crate) fn device_id(&self) -> &String {
+        &self.iot.device_id
     }
 
     #[deprecated]
-    pub(crate) fn privt_key(&self) -> &String {
-        &self.iot.private_key
+    pub(crate) fn device_secret(&self) -> &String {
+        &self.iot.device_secret
     }
 
     pub(crate) fn keypais(&self) -> (&String, &String) {
-        (&self.iot.public_key, &self.iot.private_key)
+        (&self.iot.device_id, &self.iot.device_secret)
     }
 
     /// return : (retry_time, retry_int)
@@ -123,8 +174,8 @@ impl MCU {
         &self.connection.pwd
     }
 
-    pub(crate) fn change_pwd(&mut self, newone: String) {
-        self.connection.pwd = newone;
+    pub(crate) fn port(&self) -> u16 {
+        self.connection.port
     }
 
     pub(crate) fn reconnect(&self) {}
@@ -140,7 +191,7 @@ pub enum CommandTypes {
     Update,
     SPI,
     ListMode,
-    ListLength(u32),
+    ListLength(u32), // FIXME: remove the u32 inner type
     ListReset,
     Sync,
     Init,

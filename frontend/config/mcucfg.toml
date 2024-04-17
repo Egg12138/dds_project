@@ -1,9 +1,9 @@
-debug = true
+debug = false
 
 [connection]
-ip = "127.0.0.1" # ipv4 of the MCU, only used in wifi mode and iot mode
+ip = "127.0.2.1" # ipv4 of the MCU, only used in wifi mode and iot mode
 pwd = "liyuan11328"
-# mode = "wired" deprecated
+port = 8080
 retry = 5 # how many times it tries when Connection Errors occuring 
 retry_interval = 0.8 # secs
 
@@ -11,8 +11,8 @@ retry_interval = 0.8 # secs
 # pwd = "liyuan11328" # if necassary
 
 [iot]
-public_key = "public key demo"
-private_key = "123456"
+device_id = "660d43201b5757626c1b700f_0403demo"
+device_secret = "123456"
 
 
 

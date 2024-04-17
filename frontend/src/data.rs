@@ -19,6 +19,7 @@ use crate::cli::CommunicationMethod;
 use crate::config::{CommandTypes, Paras};
 use crate::control::{has_connected, poweroff};
 use crate::ddserror::{self, DDSError};
+use crate::nets;
 use crate::{config as cfg, control};
 use crate::{data, log_func};
 use colored::Colorize;
@@ -152,6 +153,15 @@ pub unsafe fn try_send(encoded: String) -> Result<(), DDSError> {
 
             CommunicationMethod::Wifi => {
                 log_func!(on_bright_magenta:"\tSending via Wifi to ESP32");
+                match nets::client_send(encoded) {
+                    Ok(_) => {
+                        log_func!(on_bright_green:"\t\tSent to ESP32 Successfully");
+                    }
+                    Err(e) => {
+                        log_func!(on_bright_red:"\t\tFailed to send to ESP32");
+                        eprintln!("\t\tError: {}", e);
+                    }
+                }
             }
 
             CommunicationMethod::Wired => {

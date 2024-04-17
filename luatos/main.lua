@@ -3,10 +3,12 @@ PROJECT = "DDS-Demo"
 VERSION = "0.1.7"
 
 _G.sys = require("sys")
+require("sysplus")
 
 checker = require("checks")
 wifi = require("wifi-manager")
 mqtthelper = require("mqtts")
+handler = require("data_handler")
 
 DATA_STREAM = ""
 DDS = require("dds_defs")
@@ -14,16 +16,6 @@ MCU = require("mcu_defs")
 COMMUNICATION_MODE = "MQTT" -- MQTT, Socket, ...
 -- wdt.init(10000) -- watch dog timer: 10s
 
-DATA_WIDTH = 8 -- 8 bits
-SPIO_BAUD = MCU.C3.spiClk
-
-function get_spi_modes(mode)
-  mode = mode or 0 -- default mode is SPI MODE0
-  -- grammar works in Lua 5.3
-  cpha = (mode & 0x3) >> 1
-  cpol = (mode & 0x2)
-  return cpha, cpol
-end
 
   --[=====[
   ```c++17
@@ -54,43 +46,54 @@ function init_system()
   wifi.simpleRun()
   MCU.init("esp32c3")
 
-
-  cpha, cpol = get_spi_modes(3)
-  -- hardware SPI
-  -- spi.setup(spi.SPI_3, MCU.C3.SS, cpha, cpol, DATA_WIDTH, SPIO_BAUD, spi.MSB, 1, DUAL)
-  -- software SPI
-  if not spi.createSoft(MCU.C3.SS, MCU.C3.MOSI,MCU.C3.MISO, MCU.C3.SCLK,cpha,cpol, 
-  DATA_WIDTH, SPIO_BAUD, spi.MSB, spi.master, spi.full) then
-    log.error("SPI-SETUP","create Soft failed")
-  else 
-    log.info("SPI-SETUP","create Soft success")
-  end
-
+  handler.setup_spi()
+  handler.init_DDS()
+  
 end
 
-function main()
-  init_system()
-  while true do
-    log.info("main", "loop")
-    sys.wait(5000)
-
-    if COMMUNICATION_MODE == "Socket" then
-      socket_listen()
-      client = server.available()
-      if client then
-        while client.connected() do
-          local data = client.read()
-          log.info("Socket read", "data", data)
-
-          data_handler(data)
-
-
-        end 
-      end
-      elseif COMMUNICATION_MODE == "MQTT"  then
-        sys.taskInit(mqtthelper.run)
+function datapkg_parser(client, data) 
+  datapkg = json.decode(data)
+  if datapkg then
+    assert(datapkg.command_name, "json decoded incorrectly, the field `command_name` shoule be found!")
+    cmd = datapkg.command_name
+    if not handler.contains(DDS.commands, cmd) then
+      log.error("DDS-HANDLER", "command not found", cmd)
+      return
     end
+    if cmd == "input" then 
+      handler.set_input(datapkg.paras)
+    elseif cmd == "spi" then
+      log.info("CmdHandler", "spi cmds", paras)  
+      spi_cmd = paras
+      handler.spi_cmds_transfer(spi_cmd)
 
+    elseif cmd == "init" then
+      handler.init_DDS()
+      log.info("DataHandler", "DDS init")
+    elseif cmd == "reset" then
+      -- software reset 
+      reset_DDS()
+      log.info("DataHandler", "DDS reset")
+    elseif cmd == "update" then
+      IO_update()
+      log.info("DataHandler", "DDS updated")
+    elseif cmd == "sync" then
+    elseif cmd == "poweroff" then
+    elseif cmd == "report" then
+      -- dds_info = "AD9959 & ESP32C3"
+      client.send(dds_info)
+      log.info("DataHandler", "Report is not supported well currently"    )
+    -- elseif cmd == "listlength" then
+      -- num_cmds = tonumber(paras)
+    elseif cmd == "listmode" or
+      cmd == "listreset" or
+      cmd == "listlength"
+    then
+      log.warn("DataHandler", "List Mode is not supported currently")
+    end
+      
+  else
+    log.warn("Datahandler", "json decoded failed", data)
   end
 end
 
@@ -100,7 +103,30 @@ sys.timerLoopStart(function()
 end
 , 5000)
 
-sys.taskInit(main)
+sys.taskInit(function()
+
+  init_system()
+    log.info("main", "loop")
+    sys.wait(5000)
+
+    if COMMUNICATION_MODE == "Socket" then
+      socket_listen()
+      client = server.available()
+      if client.connected() then
+          local data = client.read_whole_packet()
+          log.info("Socket read", "data", data)
+
+          datapkg_parser(data)
+
+      end
+    elseif COMMUNICATION_MODE == "MQTT"  then
+        sys.taskInit(mqtthelper.run)
+    end
+
+
+
+
+end)
 
 sys.subscribe("START", function()
   log.info("wlan power save", "canceld")

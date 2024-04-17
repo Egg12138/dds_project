@@ -1,6 +1,6 @@
 [package]
 name = "DDSCLIControl"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 
 [dependencies]
@@ -17,6 +17,9 @@ exitcode = "*"
 
 
 [features]
-default = []
-debug = ["costy_debug"]
+default = [
+  "debug", 
+]
+debug = ["costy_debug",]
 costy_debug = []
+nets-debug = []

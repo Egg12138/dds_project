@@ -1,12 +1,12 @@
 # today
 
+
 ## project software demo todos
 
-TODO: 1. arduino 快速测试 wifi 收发 控制ad9910
-TODO: 2. luatos API 教程选做
-TODO: 3. luatos WIFI API写demo
-TODO: 4. backend demo
-TODO: 5. html controller
+TODO: rust net tcp socket
+TODO: luatos tcp socket
+TODO: PCB board
+TODO: Manual
 
 ### Frontend
 

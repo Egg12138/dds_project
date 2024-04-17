@@ -1,6 +1,18 @@
 local AD9959 = {}
 
-
+AD9959.commands = {
+  "input",
+  "sync",
+  "init",
+  "reset",
+  "poweroff",
+  "update",
+  "report",
+  "spi",
+  "listreset",
+  "listmode",
+  "listlength",
+}
 AD9959.pins = {}
 AD9959.regs = {}
 AD9959.pins.pin_IO_intr = 19 -- changable

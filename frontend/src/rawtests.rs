@@ -62,6 +62,7 @@ fn str2cmd_works() {
     let cmd = "illegal_cmd";
     assert!(TryInto::<DataPacket>::try_into(cmd).is_err())
 }
+
 #[test]
 fn unsafe_try_send_str() {
     send_msg("TRY SENT".to_string());
@@ -72,6 +73,30 @@ fn unsafe_try_send_str() {
             log_func!(cyan:"sent");
         }
     }
+}
+
+fn Input_en_de() {
+
+}
+
+fn CommandTypes_en_de() {
+    
+}
+
+fn DataPacket_en_de() {
+
+}
+
+fn DataStream_en_de() {
+
+}
+
+#[test]
+fn json_encode_decode_well() {
+    Input_en_de();
+    CommandTypes_en_de();
+    DataPacket_en_de();
+    DataStream_en_de();
 }
 
 #[test]

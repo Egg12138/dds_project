@@ -41,7 +41,7 @@ function MQTT.cmd_handler(request)
           log.info("CmdHandler", "spi cmds", paras)  
           -- one line command
           spi_cmd = paras
-          spi_control(spi_cmd)
+          spi_cmds_transfer(spi_cmd)
 
         elseif cmd == "report" then 
         elseif cmd == "poweron" then

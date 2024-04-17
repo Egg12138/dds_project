@@ -19,6 +19,7 @@ mod config;
 mod control;
 mod data;
 mod ddserror;
+mod nets;
 mod rawtests;
 mod register_controller;
 
@@ -27,6 +28,8 @@ use cli::Cli;
 fn main() {
     let args = Cli::parse();
 
+    #[cfg(feature = "nets-debug")]
+    nets::client_server();
     match args.commands {
         Cmds::Repl { interactive } => {
             if interactive.unwrap() {

@@ -5,6 +5,7 @@
 
 use crate::config::{CommandTypes, DDSInput};
 use crate::data::{quick_cmd2datapkg_no_paras, quick_send_noparas, send_datapkg, send_msg};
+use crate::nets;
 use colored::Colorize;
 use core::panic;
 use std::sync::Once;
@@ -13,7 +14,7 @@ use std::{env, sync::Arc};
 // use std::error::Error;
 use crate::{
     cli::{CommunicationMethod, RunnerArgs},
-    config::{quick_input_watcher, MCU},
+    config::{quick_input_watcher, MCU, MCU_SOLID},
     ddserror::DDSError,
 };
 
@@ -217,35 +218,20 @@ pub(crate) fn repl() {
 }
 
 pub(crate) fn init_system() {
-    // unsafe {
     let climode = unsafe { get_mode() };
-    match try_parse_mcu() {
-        Err(e) => {
-            //TODO if failed to parse.
-            eprintln!(
-                "{}:\n{:?}",
-                "[control::try_parse_mcu] failed to parse, exit".on_red(),
-                e
-            );
-            eprintln!("current directory is {:?}", std::env::current_dir());
-            exit(0x01)
-        }
 
-        Ok(mcu) => {
-            connect2esp32(&mcu, &climode);
+    connect2esp32(&climode);
 
-            unsafe {
-                once_setup();
-            }
-            checks();
-            // }
-
-            log_func!();
-        }
+    unsafe {
+        once_setup();
     }
+    checks();
+
+    log_func!();
 }
 
-fn connect2esp32(mcu: &MCU, climode: &CommunicationMethod) {
+fn connect2esp32(climode: &CommunicationMethod) {
+    // fn connect2esp32(mcu: &MCU, climode: &CommunicationMethod) {
     match climode {
         CommunicationMethod::Ble => {
             log_func!(on_bright_magenta:"\tConnecting to ESP32 via BLE");
@@ -256,14 +242,18 @@ fn connect2esp32(mcu: &MCU, climode: &CommunicationMethod) {
         }
         CommunicationMethod::Wifi => {
             log_func!(on_bright_magenta:"\tConnectingto ESP32 via Wifi");
-            let (retry_times, retry_int) = mcu.retry_settings();
-            let mut loops = 0;
+            // let (retry_times, retry_int) = mcu.retry_settings();
+            let (retry_times, retry_int) = MCU_SOLID.retry_settings();
+            let mut loops = 1;
             while let Err(e) = try_connect(retry_times, retry_int) {
-                if loops >= retry_times {
+                if loops > retry_times {
                     log_func!(on_red:"Closed.");
                     exit(exitcode::UNAVAILABLE);
                 }
-                eprintln!("failed to connect to {}", mcu.ip());
+                eprintln!(
+                    "{loops}/{retry_times} tries. failed to connect to {}",
+                    MCU_SOLID.ip()
+                );
                 eprintln!("reconnect in {} seconds", retry_int);
                 thread::sleep(Duration::from_secs_f32(retry_int));
                 loops += 1;
@@ -278,13 +268,17 @@ fn connect2esp32(mcu: &MCU, climode: &CommunicationMethod) {
 }
 
 // TODO finish the DDSError
+
 fn try_connect(re_time: u32, re_int: f32) -> Result<(), DDSError> {
     unsafe {
         set_connected();
     }
+    let Ok(_) = nets::client_connect() else {
+        log_func!(on_red:"Connection tried failed");
+        return Err(DDSError::ConnectionLost);
+    };
 
-    // Ok(())
-    Err(DDSError::ConnectionLost)
+    Ok(())
 }
 
 fn disconnect() {
@@ -348,19 +342,15 @@ pub(super) fn run(args: RunnerArgs) {
 }
 
 pub(crate) fn execute(script: String) {
-    if let Ok(mcucfg) = MCU::new() {
-        if !has_setup() {
-            log_func!(red:"HASN'T init!");
-            init_system();
-        }
-        println!("executing...{}", &script.blue());
-
-        raw_execute(script);
-
-        log_func!(" script executed.");
-    } else {
-        panic!();
+    if !has_setup() {
+        log_func!(red:"HASN'T init!");
+        init_system();
     }
+    println!("executing...{}", &script.blue());
+
+    raw_execute(script);
+
+    log_func!(" script executed.");
 }
 
 fn raw_execute(script: String) {
@@ -376,14 +366,18 @@ pub(crate) fn monitor() {
 /// bind esp32 using esp32's IP?
 /// 1. read and load the config
 /// as for trying to connect... this is the mission of another function
+#[deprecated(
+    since = "0.1.8",
+    note = "use the static ref `MCU_SOLID` instead, which is a global static variable"
+)]
 pub(crate) fn try_parse_mcu() -> Result<MCU, DDSError> {
     match MCU::new() {
         Ok(mcu) => {
             if mcu.debug() {
                 println!("bind success, {}", "debug mode: On".cyan().bold());
                 println!("trying to connect to ...{} ", mcu.ip());
-                println!("<{}> -- <{}>", mcu.pub_key(), mcu.pub_key());
-                println!("<{}> -- <{}>", mcu.privt_key(), mcu.privt_key());
+                println!("<{}> -- <{}>", mcu.device_id(), mcu.device_id());
+                println!("<{}> -- <{}>", mcu.device_secret(), mcu.device_secret());
             } else {
                 println!("{}", "debug mode: Off".cyan().italic());
             }

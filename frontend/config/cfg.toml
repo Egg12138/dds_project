@@ -8,7 +8,7 @@
 # command_name = { "ListLength" = 3 }
 hostname = "MagicBook Windows WSL"
 # command_name = { "ListLength" = 3 }
-command_name = "ListMode"
+command_name = "reset"
 [paras]
 freq_hz = 3.1
 vol_mv = 333.14
