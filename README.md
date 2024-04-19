@@ -6,7 +6,7 @@
 TODO: rust net tcp socket
 TODO: luatos tcp socket
 TODO: PCB board
-TODO: Manual
+TODO: Manual & notes -> paper
 
 ### Frontend
 

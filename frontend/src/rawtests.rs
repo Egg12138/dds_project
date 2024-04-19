@@ -73,23 +73,16 @@ fn unsafe_try_send_str() {
             log_func!(cyan:"sent");
         }
     }
+    log_func!();
 }
 
-fn Input_en_de() {
+fn Input_en_de() {}
 
-}
+fn CommandTypes_en_de() {}
 
-fn CommandTypes_en_de() {
-    
-}
+fn DataPacket_en_de() {}
 
-fn DataPacket_en_de() {
-
-}
-
-fn DataStream_en_de() {
-
-}
+fn DataStream_en_de() {}
 
 #[test]
 fn json_encode_decode_well() {

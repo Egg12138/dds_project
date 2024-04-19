@@ -270,13 +270,14 @@ fn connect2esp32(climode: &CommunicationMethod) {
 // TODO finish the DDSError
 
 fn try_connect(re_time: u32, re_int: f32) -> Result<(), DDSError> {
-    unsafe {
-        set_connected();
-    }
     let Ok(_) = nets::client_connect() else {
         log_func!(on_red:"Connection tried failed");
         return Err(DDSError::ConnectionLost);
     };
+
+    unsafe {
+        set_connected();
+    }
 
     Ok(())
 }
@@ -346,11 +347,11 @@ pub(crate) fn execute(script: String) {
         log_func!(red:"HASN'T init!");
         init_system();
     }
-    println!("executing...{}", &script.blue());
+    // println!("executing...{}", &script.blue());
 
-    raw_execute(script);
+    // raw_execute(script);
 
-    log_func!(" script executed.");
+    // log_func!(" script executed.");
 }
 
 fn raw_execute(script: String) {

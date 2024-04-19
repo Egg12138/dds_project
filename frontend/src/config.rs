@@ -441,14 +441,13 @@ pub(crate) fn quick_input_watcher(script: String) {
     //     });
     // }
     control::execute(script);
-    // TODO: asyn executing:
     show();
     watch();
 }
 
 pub(crate) fn show() {
     println!(
-        "* Settings:: \n\x1b[31m{:?}\x1b[0m",
+        "* Current settings:: \n\x1b[31m{:?}\x1b[0m",
         CFG.read()
             .unwrap()
             .clone()
@@ -499,7 +498,7 @@ fn watch() {
                     .try_deserialize::<DDSInput>()
                     .unwrap_or_default();
                 if input.valid_input() {
-                    data::send_msg(serde_json::to_string_pretty(&input).unwrap_or_default());
+                    data::send_msg(serde_json::to_string_pretty(&input).unwrap());
                     show();
                 } else {
                     println!("{}", "invalid input setting!".on_red());

@@ -160,6 +160,7 @@ pub unsafe fn try_send(encoded: String) -> Result<(), DDSError> {
                     Err(e) => {
                         log_func!(on_bright_red:"\t\tFailed to send to ESP32");
                         eprintln!("\t\tError: {}", e);
+                        return Err(DDSError::IO(e));
                     }
                 }
             }
@@ -170,17 +171,11 @@ pub unsafe fn try_send(encoded: String) -> Result<(), DDSError> {
         }
     }
 
-    if !has_connected() {
-        log_func!(on_red:" havn't connected to MCU!");
-        Err(DDSError::ConnectionLost)
-    } else {
-        log_func!(magenta:" sent!");
-        Ok(())
-    }
+    Ok(())
 }
 
 pub(crate) fn send_msg(msg: String) {
-    log_func!(cyan: "receiving String...");
+    log_func!(cyan: "ready for sending String...");
 
     print!("\t{msg} => {:?}, ", msg);
 
@@ -190,8 +185,6 @@ pub(crate) fn send_msg(msg: String) {
             Err(e) => eprintln!("\tsend error.{:?}", e),
         }
     }
-
-    log_func!(cyan: " sent.");
 }
 
 pub(crate) fn send_cmd_with_paras(data: DataStream) -> Result<(), DDSError> {

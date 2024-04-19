@@ -6,10 +6,10 @@
 # 3. NOTICE: if command_name = "ramp", you should use `ddsc scan <args>`, instead of cfg.toml
 
 # command_name = { "ListLength" = 3 }
-hostname = "MagicBook Windows WSL"
+hostname = "MagicBook Windows WSL2"
 # command_name = { "ListLength" = 3 }
-command_name = "reset"
+command_name = "input"
 [paras]
-freq_hz = 3.1
-vol_mv = 333.14
-ph_oft = 120
+freq_hz = 111.231
+vol_mv = 33.1
+ph_oft = 112

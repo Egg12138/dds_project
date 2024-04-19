@@ -127,6 +127,7 @@ macro_rules! onoff {
         }
     };
 }
+
 /// Modulatio Level bits `FR1[9:8]`
 pub(self) enum ModulationLevel {
     /// 0b00

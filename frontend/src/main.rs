@@ -28,8 +28,6 @@ use cli::Cli;
 fn main() {
     let args = Cli::parse();
 
-    #[cfg(feature = "nets-debug")]
-    nets::client_server();
     match args.commands {
         Cmds::Repl { interactive } => {
             if interactive.unwrap() {
