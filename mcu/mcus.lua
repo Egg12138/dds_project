@@ -27,33 +27,5 @@ OUTPUT = 0x1
   -- IO9 => BOOT, 低电平有效
   -- IO18, 19 => for USB 
 
-function esp32c3_init() 
-  -- setup to **OUTPUT** mode, `setup` returns closure to set(output)/get(input) the level
-  CS = gpio.setup(MCU.C3.SS, OUTPUT)
-  UPD = gpio.setup(MCU.C3.UPD, OUTPUT)
-  RST = gpio.setup(MCU.C3.RST_DDS, OUTPUT)
-  SYNC = gpio.setup(MCU.C3.SYNC, OUTPUT)
-  INTR = gpio.setup(MCU.C3.INTR, INPUT, PULLUP) -- 内部 PULLUP
-
-end
-
-function esp32s3_init()
-  CS = gpio.setup(MCU.S3.SS, OUTPUT)
-  UPD = gpio.setup(MCU.S3.UPD, OUTPUT)
-  RST = gpio.setup(MCU.S3.RST_DDS, OUTPUT)
-  SYNC = gpio.setup(MCU.S3.SYNC, OUTPUT)
-  INTR = gpio.setup(MCU.S3.INTR, INPUT, PULLUP) -- 内部
-end
-
-function MCU.init(board)
-  if board == "esp32c3" or board == "ESP32C3" then
-    esp32c3_init()
-  elseif board == "esp32s3" or board == "ESP32S3" then
-    esp32s3_init()
-  else
-    log.error("MCU-INIT", "Unsupported board, only ESP32C3(luatos) and ESP32S3(luatos) are supported",board)
-  end
-end
-
 
 return MCU

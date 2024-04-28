@@ -7,7 +7,6 @@
 
 # command_name = { "ListLength" = 3 }
 hostname = "MagicBook Windows WSL2"
-# command_name = { "ListLength" = 3 }
 command_name = "input"
 [paras]
 freq_hz = 111.231

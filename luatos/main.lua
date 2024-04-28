@@ -52,7 +52,9 @@ function init_system()
 end
 
 function datapkg_parser(client, data) 
+
   datapkg = json.decode(data)
+
   if datapkg then
     assert(datapkg.command_name, "json decoded incorrectly, the field `command_name` shoule be found!")
     cmd = datapkg.command_name
@@ -63,6 +65,7 @@ function datapkg_parser(client, data)
     if cmd == "input" then 
       handler.set_input(datapkg.paras)
     elseif cmd == "spi" then
+
       log.info("CmdHandler", "spi cmds", paras)  
       spi_cmd = paras
       handler.spi_cmds_transfer(spi_cmd)
