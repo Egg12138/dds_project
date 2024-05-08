@@ -195,7 +195,7 @@ function manager.disconnect()
 end
 
 -- 简单运行模式：初始化、加载配置、扫描并尝试连接
-function manager.simpleRun()
+function manager.simple_run()
   manager.init()
   manager.load()
   manager.scan_and_connect(wlan.STATION, 1000)

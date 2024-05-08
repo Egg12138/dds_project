@@ -1,30 +1,29 @@
 PROJECT = "DDS-Demo"
-VERSION = "0.1.7"
+VERSION = "0.1.9"
 
 _G.sys = require("sys")
 require("sysplus")
 
---[==[
-TODO: 移动到 connection, utils 等目录下
+--[==[TODO: 移动到 connection, utils 等目录下
 --]==]
 
-checker = require("checks")
+
 wifi = require("wifi-manager")
-mqtthelper = require("mqtts")
+iot = require("mqtts")
 handler = require("data_handler")
-DDS = require("ddss")
 MCU = require("mcus")
 
 notice = require("log_context") -- Chinese Logs
 logs = notice.zhlog
 
 DATA_STREAM = ""
-COMMUNICATION_MODE = "MQTT" -- MQTT, Socket, ...
+COMMUNICATION_MODE = "IoT" -- MQTT, Socket, ...
+
 
 
 function esp32c3_init() 
   -- setup to **OUTPUT** mode, `setup` returns closure to set(output)/get(input) the level
-  CS = gpio.setup(MCU.C3.SS, OUTPUT)
+  CS = gpio.setup(MCU.C3.CS, OUTPUT)
   UPD = gpio.setup(MCU.C3.UPD, OUTPUT)
   RST = gpio.setup(MCU.C3.RST_DDS, OUTPUT)
   SYNC = gpio.setup(MCU.C3.SYNC, OUTPUT)
@@ -52,11 +51,12 @@ end
 
 
 
-function init_system() 
+function init_system()
 
-  wifi.simpleRun()
+  wifi.simple_run()
+  log.info("before init:debug", (CS ~= nil), (UPD ~= nil), (RST ~= nil), (SYNC ~= nil), (INTR ~= nil))
   mcu_init("esp32c3")
-
+  log.info("after init:debug", (CS ~= nil), (UPD ~= nil), (RST ~= nil), (SYNC ~= nil), (INTR ~= nil))
   handler.setup_spi()
   handler.init_DDS()
   
@@ -64,35 +64,77 @@ end
 
 
 
+function mqtt_runner()
+
+  while not wlan.ready() do
+    log.info("MQTT runner", "wifi", logs.notready)
+    wifi.simple_rerun()
+  end
+
+iot_clientid, iot_user, iot_pwd = iotauth.iotda(
+    iot.device_id,
+    iot.device_secret
+  )
+
+  log.info("IoTDA", iot_clientid, iot_user, iot_pwd)
+
+  mqttc = mqtt.create(nil, iot.iot_url, iot.port)
+
+  mqttc:auth(iot_clientid, iot_user, iot_pwd)
+  mqttc:keepalive(30)
+  mqttc:autoreconn(true, 3000)
+  log.info("MQTT", logs.iot_authorize_ok)
+  mqttc:on(function(mqtt_client, event, topic, payload, metas)
+    log.info("MQTT", "event happened", event, mqtt_client)
+    log.info("MQTT:debug", "event topic", topic, "payload", payload, "table ID", metas)
+    if event == "conack" then
+      -- TODO: 报文格式解析
+      sys.publish("MQTT-conack")
+      mqttc:subscribe(iot.topics.cmds_dSpP, 1)
+    elseif event == "sent" then
+      log.info("MQTT:sent", "topic", topic, payload, logs.fin)
+      sys.publish("MQTT-sent", payload, topic)
+    elseif event == "recv" then
+      sys.publish("MQTT-receive", topic, payload)
+    else
+      log.info("MQTT", logs.invalid_command)
+    end
+  end)
+
+  mqttc:connect()
+
+  mqttc:publish(iot.topics.msg_up_dPpS,"原神启动",1)
+end
+
+
 sys.taskInit(function()
 
   init_system()
-  log.info("Main", "Started...")
+  -- wifi.simple_run()
+  log.info("Main", "MQTT communication started...")
   sys.wait(1000)
+  mqtt_runner()
+  sys.waitUntil("disconnect")
+  mqttc:close()
+  mqttc = nil
 
-  if COMMUNICATION_MODE == "Socket" then
-    log.info("Communcation", logs.communicate_socket, logs.unsupported)
-  elseif COMMUNICATION_MODE == "IoT" then
-    log.info("Communcation", logs.communicate_iot)
-    --[==[
-     TODO: mqtt runner 
-     循环：
-      等待MQTT:
-      接收MQTT:
-      响应MQTT:
-    --]==]
-
-  end
 end)
 
--- sys.subscribe("WIFISTART", function()
---   wlan.powerSave(wlan.PS_NONE)
--- end)
+sys.subscribe("MQTT-conack", function()
+  log.info("MQTT:Conack", logs.iot_conack)
+  log.info("DDSController", logs.usage)
+end
+)
 
--- sys.subscribe("WIFIPAUSE", function()
---   log.info("wlan power save", "pause. waiting for new commands")
---   wlan.powerSave(wlan.PS_MAX_MODEN)
--- end
--- )
+sys.subscribe("MQTT-receive", function(topic, data)
+  log.info("MQTT:receive", topic, logs.received_datapkg, data)
+  handler.handle_received(data)
+  log.info("MQTT:receive", logs.fin)
+end
+)
 
+sys.timerLoopStart(function()
+  collectgarbage("collect")
+end
+, 5000)
 sys.run()

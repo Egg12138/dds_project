@@ -9,7 +9,7 @@ datapkg = {
 
 local MQTT = {}
 
-CMDNAMES = {
+MQTT.cmdnames = {
   "poweroff", 
   "scan", 
   "input", 

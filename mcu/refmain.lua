@@ -2,18 +2,6 @@
 PROJECT = "DDS-Demo"
 VERSION = "0.1.7"
 
-_G.sys = require("sys")
-require("sysplus")
-
-checker = require("checks")
-wifi = require("wifi-manager")
-mqtthelper = require("mqtts")
-handler = require("data_handler")
-
-DATA_STREAM = ""
-DDS = require("dds_defs")
-MCU = require("mcu_defs")
-COMMUNICATION_MODE = "MQTT" -- MQTT, Socket, ...
 -- wdt.init(10000) -- watch dog timer: 10s
 
 
@@ -43,7 +31,7 @@ COMMUNICATION_MODE = "MQTT" -- MQTT, Socket, ...
   
 function init_system() 
 
-  wifi.simpleRun()
+  wifi.simple_run()
   MCU.init("esp32c3")
 
   handler.setup_spi()
@@ -101,10 +89,6 @@ function datapkg_parser(client, data)
 end
 
 -- GC per 5 seconds
-sys.timerLoopStart(function()
-  collectgarbage("collect")
-end
-, 5000)
 
 sys.taskInit(function()
 
@@ -123,7 +107,7 @@ sys.taskInit(function()
 
       end
     elseif COMMUNICATION_MODE == "MQTT"  then
-        sys.taskInit(mqtthelper.run)
+        sys.taskInit(iot.run)
     end
 
 
@@ -144,6 +128,42 @@ end
 
 
 
+function d() 
+   client_id, user_name, password = iotauth.iotda(
+      iot.device_id,
+      iot.device_secret
+    )
 
+    log.info("IoTDA", client_id, user_name, password)
+
+    mqttc = mqtt.create(nil, iot.iot_url, iot.port)
+
+    mqttc:auth(client_id, user_name, password)
+    mqttc:keepalive(30)
+    mqttc:autoreconn(true, 3000)
+    mqttc:on(function(mqtt_client, event, data, payload, metas)
+    log.info("mqtt", logs.iot_authorize_ok)
+    log.info("mqtt", "event", event, mqtt_client, data, payload)
+    if event == "conack" then
+      sys.publish("MQTT-conack")
+      mqtt_client:subscribe(iot.topics.setinput_dSpP, 1)
+    elseif event == "sent" then
+      log.info("mqtt:sent", logs.fin, "mqtt message id", data, payload)
+    elseif event == "recv" then
+      log.info("mqtt:receive", "command", "topic", data, "payload", payload)
+      --[==[
+      -- notice: metas: 
+      --           -- qos: 0, 1, 2
+      --           -- retain: 0, 1
+      --           -- duo: 0, 1
+      --]==]
+      log.info("mqtt:received metas", metas)
+    elseif event == "disconnect" then
+      mqttc:disconnect()
+    else 
+      log.error("mqtt", event, logs.unsupported )
+      log.info("mqtt", "received", data, payload, metas)
+    end
+end
 
 sys.run()

@@ -1,13 +1,16 @@
 _G.sys = require("sys")
 
-
+local logs = require("log_context")
 
 -- WiFi管理器，用于存储和管理WiFi网络配置
 HOST_NAME = "DDS-esp32c3" -- 设备主机名
 SSID = "PROV_eggs" -- 内置SSID
 PWD = "liyuan11328" -- 内置密码
+-- SSID = "SYSU-SECURE"
+-- PWD = "Ayden69double71"
 SSID_AS_AP = "esp32c3-ap577" -- 设备作为AP的SSID
 PWD_AS_AP = "12345678" -- 设备作为AP的密码
+MCU_MAC = wlan.getMac()
 
 local manager = {} -- WiFi管理器的实例
 
@@ -104,20 +107,20 @@ end
 
 -- 在Station模式或AP模式下进行WiFi扫描和连接
 function manager.scan_and_connect(mode,timeout)
-  timeout = timeout or 1200
+  timeout = timeout or 100
   sys.wait(100)
   wlan.setMode(mode)
 
   if mode == wlan.STATION then
     manager.connect()
     while not wlan.ready() do
+      log.info("wlan", logs.notready, "STA MAC:".. MCU_MAC, "try to reconnect")
       sys.wait(timeout)
       manager.connect()
       local ret, ip = sys.waitUntil("IP_READY",1000)
       if ret or ip then
         break
       end
-      log.info("wlan", "STA MAC".. wlan.getMac(), "try to reconnect")
       sys.wait(100)
     end
 
@@ -158,8 +161,12 @@ function fskv_seT_last(ssid,pwd)
   fskv.set("last_wlan_pwd", pwd)
 end
 
--- 尝试连接到指定的WiFi网络
 function manager.connect()
+  if wlan.ready() then return end
+  wlan.connect(SSID, PWD)
+end
+-- 尝试连接到指定的WiFi网络
+function manager.full_scan_connect()
   if wlan.ready() then
     return
   end
@@ -194,8 +201,13 @@ function manager.disconnect()
   log.info("wifi manager", "disconnected")
 end
 
+function manager.simple_rerun()
+  manager.scan_and_connect(wlan.STATION, 1000)
+  log.info("wifimanager", "re connect", "Ok. ")
+end
+
 -- 简单运行模式：初始化、加载配置、扫描并尝试连接
-function manager.simpleRun()
+function manager.simple_run()
   manager.init()
   manager.load()
   manager.scan_and_connect(wlan.STATION, 1000)

@@ -1,4 +1,5 @@
 require("sysplus")
+require("data_handler")
 local sys = require "sys"
 datapkg = {
   command_name = "",
@@ -9,20 +10,15 @@ datapkg = {
 
 local MQTT = {}
 
-CMDNAMES = {
-  "poweroff", 
-  "scan", 
-  "input", 
-  "report",
-  "init",
-  "spi",
-"sync", 
-"reset",
-"listmode"
-}
+MQTT.iot_url = "9ceb993f1d.st1.iotda-device.cn-south-1.myhuaweicloud.com"
+MQTT.device_id = "660d43201b5757626c1b700f_0403demo"
+MQTT.device_secret = "liyuan11328"    --设备密钥
+MQTT.port = 1883
 
-device_id     = "660d43201b5757626c1b700f_0403demo"    --改为你自己的设备id
-device_secret = "liyuan11328"    --设备密钥
+MQTT.topics = {}
+-- d{P, S}p{P, S} => device: Publisher or Subscriber; platform: Publisher or Subscriber
+MQTT.topics.msg_up_dPpS = "$oc/devices/"..MQTT.device_id.."/sys/messages/up"
+MQTT.topics.cmds_dSpP = "$oc/devices/"..MQTT.device_id.."/sys/commands"
 
 local mqttc = nil
 
@@ -78,7 +74,7 @@ function MQTT.run()
     log.info("iotda",client_id,user_name,password)
     
     -- mqtts device join
-    mqttc = mqtt.create(nil,"9ceb993f1d.st1.iotda-device.cn-south-1.myhuaweicloud.com", 1883)
+    mqttc = mqtt.create(nil,"9ceb993f1d.st1.iotda-device.cn-south-1.myhuaweicloud.com", MQTT.port)
 
     mqttc:auth(client_id,user_name,password)
     mqttc:keepalive(30) -- 默认值240s
@@ -146,4 +142,4 @@ function MQTT.report_publish()
     end
 end
 
-
+return MQTT

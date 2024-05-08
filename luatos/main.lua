@@ -7,7 +7,7 @@ require("sysplus")
 
 checker = require("checks")
 wifi = require("wifi-manager")
-mqtthelper = require("mqtts")
+iot = require("mqtts")
 handler = require("data_handler")
 
 DATA_STREAM = ""
@@ -43,7 +43,7 @@ COMMUNICATION_MODE = "MQTT" -- MQTT, Socket, ...
   
 function init_system() 
 
-  wifi.simpleRun()
+  wifi.simple_run()
   MCU.init("esp32c3")
 
   handler.setup_spi()
@@ -123,7 +123,7 @@ sys.taskInit(function()
 
       end
     elseif COMMUNICATION_MODE == "MQTT"  then
-        sys.taskInit(mqtthelper.run)
+        sys.taskInit(iot.run)
     end
 
 
