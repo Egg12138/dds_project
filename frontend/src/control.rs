@@ -245,19 +245,20 @@ fn connect2esp32(climode: &CommunicationMethod) {
             // let (retry_times, retry_int) = mcu.retry_settings();
             let (retry_times, retry_int) = MCU_SOLID.retry_settings();
             let mut loops = 1;
-            while let Err(e) = try_connect(retry_times, retry_int) {
-                if loops > retry_times {
-                    log_func!(on_red:"Closed.");
-                    exit(exitcode::UNAVAILABLE);
-                }
-                eprintln!(
-                    "{loops}/{retry_times} tries. failed to connect to {}",
-                    MCU_SOLID.ip()
-                );
-                eprintln!("reconnect in {} seconds", retry_int);
-                thread::sleep(Duration::from_secs_f32(retry_int));
-                loops += 1;
-            }
+            try_connect(retry_times, retry_int);
+            // while let Err(e) = try_connect(retry_times, retry_int) {
+            //     if loops > retry_times {
+            //         log_func!(on_red:"Closed.");
+            //         exit(exitcode::UNAVAILABLE);
+            //     }
+            //     eprintln!(
+            //         "{loops}/{retry_times} tries. failed to connect to {}",
+            //         MCU_SOLID.ip()
+            //     );
+            //     eprintln!("reconnect in {} seconds", retry_int);
+            //     thread::sleep(Duration::from_secs_f32(retry_int));
+            //     loops += 1;
+            // }
         }
         CommunicationMethod::Wired => {
             log_func!(on_bright_magenta:"\t Established GPIO connection to ESP32");

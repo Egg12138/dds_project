@@ -95,6 +95,7 @@ iot_clientid, iot_user, iot_pwd = iotauth.iotda(
       log.info("MQTT:sent", "topic", topic, payload, logs.fin)
       sys.publish("MQTT-sent", payload, topic)
     elseif event == "recv" then
+      --- 队列阻塞的情况
       sys.publish("MQTT-receive", topic, payload)
     else
       log.info("MQTT", logs.invalid_command)

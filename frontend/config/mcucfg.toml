@@ -1,7 +1,7 @@
 debug = false
 
 [connection]
-ip = "192.168.244.122" # ipv4 of the MCU, only used in wifi mode and iot mode
+ip = "127.0.0.1" # ipv4 of the MCU, only used in wifi mode and iot mode
 port = 8081
 pwd = "liyuan11328"
 retry = 5 # how many times it tries when Connection Errors occuring 

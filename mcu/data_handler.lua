@@ -6,28 +6,46 @@ AD9959 = require("ddss")
 local notice = require("log_context")
 local logs = notice.zhlog
 local parser = require("parser")
+local iot = require("mqtts")
 MCU = require("mcus")
 DATA_WIDTH = 8 -- 8 bits
 SPIO_BAUD = MCU.C3.spiClk
 
-CMDNAMES = {
-  "poweroff",
-  "scan",
-  "input",
-  "report",
+FRONTEND_CMDNAMES = {
   "init",
-  "spi",
-  "sync",
   "reset",
+  "update",
+  "not_stage", -- paras
+  "report",
+  "clearbuf",
+  "store", -- paras
+  "scan",
+  "sync",
+  "poweroff",
+}
+
+CMDNAMES = {
+  "init",
+  "reset",
+  "store",
+  "update", -- sent and clear the buf
+  "clearbuf",
+  "not_stage",
 }
 
 local HANDLER = {}
 
+bytes_per_line = 8 -- 8 Bytes per line
+cmds_buf_linenum = 100
+cmds_buf_cap = bytes_per_line * cmds_buf_linenum
 -- 命令缓冲区, SPI Commands buffer
 -- all elements are numbers
 -- 或者用zbuffer, string? 
 -- width: 32bits/64bits
-HANDLER.cmds_buffer = {}
+-- zbuff 是动态写数据的，会自动扩大空间，
+cmds_buffer = zbuff.create(cmds_buf_cap, 0x00, zbuff.HEAP_SRAM)
+cmds_buf_used = 0
+
 
 local function get_spi_modes(mode)
   mode = mode or 0 -- default mode is SPI MODE0
@@ -40,7 +58,6 @@ end
 
 ---  reset the DDS IO buffer
 local function reset_DDSBuffers()
-  log.info("DDS Buffer reset", logs.begin)
   gpio.set(MCU.C3.SYNC, gpio.HIGH)
   gpio.set(MCU.C3.SYNC, gpio.LOW)
   log.info("DDS Buffer reset", logs.fin)
@@ -65,17 +82,16 @@ end
 --- 3. 通过串行IO端口，**编程得到需要的FTW, POW**，给每个激活了的通道。
 --- 4. 发送 IO Update信号，在IO Update执行后，所有的通道才会开始输出我们需要的信号
 local function IO_update()
-  log.info("IOUpdate", logs.begin)
   gpio.set(MCU.C3.UPD, gpio.HIGH)
   gpio.set(MCU.C3.UPD, gpio.LOW)
-  log.info("IOUpdate", logs.fin)
-  log.info("after local:debug", (CS ~= nil), (UPD ~= nil), (RST ~= nil), (SYNC ~= nil), (INTR ~= nil))
+  log.info("IOUpdate", "buffer to registers", logs.fin)
   utils.all_fields(_G)
 end
 
 
 --- func desc
---- @param cmd number 二进制命令内容,一次传一条64bits数据
+--- @param cmds_line number 二进制命令内容,一次传一条64bits数据
+--- @return number the number of bytes sent
 --- comment  
 --- AD9959 的 SERIAL i/o port pin 功能比较多。
 --- 引脚序列X = (SCLK, CS^, SDIO0, SDIO1, SDIO2, SDIO3), CS^为低电平使能
@@ -89,28 +105,35 @@ end
 --- * 第二个阶段是IO阶段。在这个阶段发生串口控制器与串行端口缓冲区之间的数据传输。
 --- **SCLK上升沿数量和寄存器宽有关**, FR1宽24bits，则第二阶段的就需要传输3字节。每一个指令字节
 --- 传输一个字节，在三个字节都传完后，整个通信周期才完成。
-local function buffer2spi(cmd)
-  local spi_data = 0
-  local flag = true
+local function buffer2spi(cmds_line)
+  local spi_data = 0 -- 8bits data
+  local flag = true -- finish flag
   CS(gpio.LOW)
-  -- 64bits=8Byte宽的指令，buffer存放8条。
+  -- 64bits，即8条字节指令
+  -- 因为整个系统全部都是大端序，所以我们需要先发射MSB。然而我们操控的cmd这个二进制字符已经按照
+  -- 小端序排列了，所以需要先获取它的高位，先传输给AD9959，AD9959的SDIO口收到了就会把这个高位
+  -- 放到AD9959 SDIO Buffer的低字节里面。等待IOUpdate信号之后，整体传输出去
   for i = 56, -9, -8 do
-    spi_data = cmd >> i
+    spi_data = (cmds_line >> i) & 0xff -- ensure 8 bits non-zero
     if flag and spi_data > 0x00 then
         if spi_data < 0x19 then
-            local sent = SPIOBJ:transfer(spi_data) 
+            SPIOBJ:transfer(spi_data)
             flag = false
-        elseif spi_data == 0x20 then
+        elseif spi_data == 0x20 then 
+          -- 即此时 cmd >> i = 0x20, 而如果是这样，就意味着
+          -- 整个cmd是这样的：0010 0000 (56 或更少 bits) ，此时是最后一个字节指令了。需要结束这一次传输周期
             spi_data = 0x00
-            sent = SPIOBJ:transfer(spi_data) -- 同样，sent未被使用
+            SPIOBJ:transfer(spi_data) -- NOTICE, sent未被使用
             flag = false
         end
     else
-        local sent = SPIOBJ:transfer(spi_data) -- 这里sent同样未被使用
+        SPIOBJ:transfer(spi_data) -- 这里sent同样未被使用
         log.info("SPI Buffer to SPI", logs.fin)
         log.info("SPI Transfer", "sent", sent, logs.fin)
     end
   end
+
+  CS(gpio.HIGH)
 
 end
 
@@ -118,14 +141,27 @@ end
 --- @param cmd_idx number : 二进制命令的缓冲区索引
 local function buffer2spi_by_idx(cmd_idx)
   local spi_data = 0
-  CS(gpio.LOW)
-  buffer2spi(HANDLER.cmds_buffer[cmd_idx])
-  CS(gpio.HIGH)
+
+  if cmd_idx > cmds_buf_used then
+    log.erorr("Command Buffer", "cmd index", logs.outrange)
+  else
+    local prev_seek = zbuff.SEEK_CUR
+    cmds_buffer:seek(cmd_idx * bytes_per_line)
+    buffer2spi(cmds_buffer:readU64())
+    cmds_buffer:seek(prev_seek)
+  end
+
 end
 
+--- stores several spicmds
+--- comment
+--- 相信Lua的GC，所以不做循坏复用zbuff
 local function store_spicmds(cmd_codes)
-  for binary_cmd in cmd_codes  do
-    table.insert(HANDLER.cmds_buffer, binary_cmd)
+  if cmds_buf_used >= cmds_buf_linenum then
+    log.error("Command Buffer", logs.overflow)
+  else
+    cmds_buffer:pack(">IIHA", cmd_codes)
+    cmds_buf_used = buff:used() / bytes_per_line
   end
 end
 
@@ -146,19 +182,38 @@ local function set_input(paras)
     "phase(degree)", phase)
 end
 
-local function raw_handle_command(cmdj, paras)
-  if cmd == "set_input" then
-    set_input(paras)
-  elseif cmd == "set_output" then
-    set_output(paras)
-  elseif cmd == "set_freq" then
-    set_freq(paras)
-  elseif cmd == "set_volt" then
-    set_volt(paras)
-  elseif cmd == "set_phase" then
-    set_phase(paras)
-  end
 
+--- func desc  
+--- 用SPI来模拟SDIO和AD9959通信
+local function pesudo_sdio(cmd)
+  
+end
+
+local function raw_handle_command(cmd, paras)
+  if cmd == "init" then
+    HANDLER.init_DDS()
+  elseif cmd == "reset" then
+    reset_DDS()
+  elseif cmd == "clearbuf" then
+    reset_DDSBuffers()
+  elseif cmd == "update" then
+    IO_update()
+  elseif cmd == "not_stage" then
+    HANDLER.transfer_cmd_not_stage(paras)
+  elseif cmd == "report" then
+    local report_msg = "chip version: " .. rtos.bsp() .. 
+    rtos.version() .. " built: " .. rtos.buildDate()
+    log.info("REPORT", report_msg)
+    mqttc:publish(iot.topics.msg_up_dPpS, report_msg, 1)
+  elseif cmd == "store" then
+    store_spicmds(paras)
+  elseif cmd == "poweroff" then
+    log.info("Command handler", logs.shutdown)
+  else 
+    -- unreachable
+    log.erorr("Command handler", logs.invalid_command, cmd)
+  end
+    log.info("Command Handler", cmd, logs.fin)
 end
 
 local function handle_command(cmd, paras)
@@ -167,7 +222,7 @@ local function handle_command(cmd, paras)
     raw_handle_command(cmd, paras)
   else
     log.error("CmdHandler", logs.invalid_command, cmd)
-    return 
+    return
   end
 end
 
@@ -228,14 +283,14 @@ function HANDLER.init_DDS()
 
 end
 
--- [[
-  --@parameter: spi_cmd, String from wifi
---]]
-function HANDLER.spi_cmds_transfer(spi_cmd)
+--- func desc
+--- @param spi_cmd string (string of 64bit-binary instruction number)
+function HANDLER.transfer_cmd_not_stage(spi_cmd)
 
   local len = string.len(spi_cmd) -- non-null char nums
   local spi_codes = tonumber(spi_cmd)
-  local spi_data = zbuff.create()
+  local spi_data = 0
+
   if len % 2 == 0 then
     len = 4 * (len - 2) - 8
   else 
@@ -243,13 +298,13 @@ function HANDLER.spi_cmds_transfer(spi_cmd)
   end
 
   CS(gpio.LOW)
-  for bit in len, -1, -8 do
+  for bit in len, -9, -8 do
     spi_data = (spi_codes >> bit) & 0xff
     if (bit == len) and spi_data > 0x18 then
       spi_data = 0x00
     end
     local sent = SPIOBJ:transfer(spi_data)
-    log.info("SPI-SENT", sent)
+    log.info("SPI-SENT", sent, "Bytes")
   end
   IO_update()
   CS(gpio.LOW)

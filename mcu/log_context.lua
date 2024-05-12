@@ -7,10 +7,19 @@ logs.zhlog = {}
 logs.enlog.usage = "The payload from IoT platform contains CommandType && Command by 64 bits"
 logs.zhlog.usage = "IoT平台下发的命令包含 CommandType && 64位指令字"
 
+logs.enlog.shutdown = "Shutdown."
+logs.zhlog.shutdown = "关闭系统"
+
 -- Errors
 
 logs.enlog.unsupported = "Unsupported"
 logs.zhlog.unsupported = "不支持"
+
+logs.enlog.overflow = "SPI Command buffer overflow"
+logs.zhlog.overflow = "SPI 指令缓存区已满"
+
+logs.enlog.outrange = "index out of range"
+logs.zhlog.outrange = "索引越界"
 
 logs.enlog.notready = "Not ready"
 logs.zhlog.notready = "未就绪"
